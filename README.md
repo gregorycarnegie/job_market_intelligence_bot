@@ -18,12 +18,13 @@ This repository contains several files, part of the job market intelligence mech
   OpenClaw will read the entire file once, while `pull_jobs.py` will pull special fields from this file in every execution (once every 60 seconds).
   OpenClaw will use AI credits to read the file and store it in memory, Python file will not use AI credits as it runs on the system level with Bash.
 - `pull_jobs.py`: thin entrypoint/orchestrator for the job bot. It wires together feed polling, scoring, state updates, snapshots, and direct Telegram delivery.
+- `telegram_callback_worker.py`: dedicated Telegram inline-button worker that long-polls `callback_query` updates and edits the current digest page in place.
 - `jobbot/common.py`: shared constants, text helpers, resume/config loading, and JSON/CSV state helpers.
 - `jobbot_state.sqlite3`: primary runtime database for matched jobs, review history, alerts, applications, and feed polling state.
 - `jobbot/sources.py`: feed and careers-page ingestion for RSS, Greenhouse, Lever, Ashby, Workable, and generic HTML careers pages.
 - `jobbot/matching.py`: scoring, application tracking, alerts, daily digest generation, and feedback learning.
 - `pull_desc.py`: fetches listings **only** from the most recent matched batch in the runtime store, then stages them into `desc.json` (a file that's being generated in the first run, and **replaced continuously** - always storing **the most recent listings** and disposing of the rest). `desc.json` is the only file that OpenClaw is exposed to.
-- `exec_loop.sh`: a bash script that runs both Python files, one after the other, every 60 seconds. Meant to run with Nohup on the system level of the VPS (see instructions below).
+- `exec_loop.sh`: a bash script that keeps `telegram_callback_worker.py` running in the background while `pull_jobs.py` and `pull_desc.py` continue on the 60-second cadence. Meant to run with Nohup on the system level of the VPS (see instructions below).
 - `.env.example`: a template for optional direct Telegram delivery using `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID`.
 - `company_boards.json.example`: optional company-board config for Greenhouse, Lever, Ashby, and Workable sources.
 - `job_search_config.json.example`: optional search-operations config for company whitelist / blacklist, shortlist employers, daily digest settings, and role-profile weights.
@@ -127,12 +128,12 @@ cd job_market_intelligence_bot
 - copy files from your local directory into your remote server:
 
 ```bash
-scp pull_jobs.py pull_desc.py exec_loop.sh resume.json .env.example company_boards.json.example job_search_config.json.example root@72.60.178.132:/docker/openclaw-cevb/data/.openclaw/workspace/
+scp pull_jobs.py pull_desc.py telegram_callback_worker.py exec_loop.sh resume.json .env.example company_boards.json.example job_search_config.json.example root@72.60.178.132:/docker/openclaw-cevb/data/.openclaw/workspace/
 ```
 
 ### 6. Run exec_loop.sh ➿
 
-Give yourself permissions to execute the loop (running both python scripts on the OS of your container once in every 60 seconds)
+Give yourself permissions to execute the loop. It will keep the Telegram callback worker alive in the background while running the two main Python scripts once every 60 seconds.
 <br>
 We do so using Nohup (No hangup) which ensures the script is running non-stop.
 
@@ -176,7 +177,7 @@ Generated runtime files:
 - `matches.json` stores the latest scored match batch with reasons and scores.
 - `seen_jobs_state.json` stores review fingerprints so already-seen non-matches and cross-source duplicates can be skipped.
 - `applications.json` stores the persistent application tracker with statuses like `new`, `reviewed`, `applied`, `rejected`, and `interview`.
-- `daily_digest.json` stores the current ranked daily digest snapshot based on score, freshness, and employer priority.
+- `daily_digest.json` stores the current ranked daily digest snapshot based on score, freshness, and employer priority. When Telegram delivery is enabled, the digest is sent as an interactive paged message with Telegram inline `Prev` / `Next` buttons, and the worker edits the same message in place as users navigate.
 - `application_briefs.json` stores the top application-ready jobs with generated “why this fits” notes, resume bullet suggestions, and intro-message drafts.
 - `borderline_matches.json` stores near-threshold candidates for optional AI review.
 - `feedback_metrics.json` stores outcome summaries, source/keyword performance, recommended score adjustments, and cleanup information.
@@ -213,7 +214,8 @@ Supported controls:
 - `company_whitelist`: adds a score boost for preferred employers.
 - `company_blacklist`: hard-rejects employers you never want to see.
 - `priority_companies`: marks high-priority employers as shortlisted and boosts them harder than a normal whitelist.
-- `daily_digest`: controls whether a once-per-day digest is sent to Telegram, when it is sent, and how many tracked jobs it includes.
+- `daily_digest`: controls whether a once-per-day digest is sent to Telegram, when it is sent, how many tracked jobs it includes, and how many jobs appear in each Telegram page via `page_size`.
+  Inline-button page changes are processed by `telegram_callback_worker.py` using Telegram long polling, so page turns should feel near-instant as long as the worker is running.
 - `feedback`: controls how aggressively the bot learns from `applied` / `interview` / `rejected` outcomes and how long old application records are retained.
 - `role_profiles`: lets you bias scoring so core IT support and sysadmin roles outrank adjacent engineering roles.
 

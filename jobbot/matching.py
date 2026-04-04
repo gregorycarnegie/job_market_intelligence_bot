@@ -1,6 +1,7 @@
 import json
 import os
 import re
+import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from urllib.error import HTTPError, URLError
@@ -745,6 +746,48 @@ def load_telegram_settings() -> tuple[str, str, str]:
     return token, chat_id, thread_id
 
 
+def _telegram_payload_value(value: object) -> str:
+    if isinstance(value, (dict, list)):
+        return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    return str(value)
+
+
+def telegram_api_request(
+    method: str,
+    token: str,
+    payload: dict[str, object] | None = None,
+    request_timeout_seconds: float | None = None,
+) -> tuple[bool, object, str]:
+    request_payload = {
+        key: _telegram_payload_value(value)
+        for key, value in (payload or {}).items()
+        if value is not None and value != ""
+    }
+    request = Request(
+        f"https://api.telegram.org/bot{token}/{method}",
+        data=urlencode(request_payload).encode("utf-8"),
+        headers={
+            "User-Agent": USER_AGENT,
+            "Content-Type": "application/x-www-form-urlencoded",
+        },
+    )
+    effective_timeout = FETCH_TIMEOUT_SECONDS if request_timeout_seconds is None else max(1.0, float(request_timeout_seconds))
+    try:
+        with urlopen(request, timeout=effective_timeout) as response:
+            body = response.read().decode("utf-8", errors="replace")
+    except (HTTPError, URLError, OSError, ValueError) as exc:
+        return False, None, clean_text(str(exc))
+    try:
+        payload_json = json.loads(body)
+    except json.JSONDecodeError:
+        return False, None, "Telegram API returned invalid JSON"
+    if payload_json.get("ok") is True:
+        return True, payload_json.get("result"), ""
+    return False, None, clean_text(str(payload_json.get("description", "Telegram API error")))
+
+
 def format_alert_message(alert: dict[str, object]) -> str:
     lines = [f"Job Match ({alert['score']}): {alert['title']}"]
     if alert.get("company"):
@@ -764,30 +807,90 @@ def format_alert_message(alert: dict[str, object]) -> str:
     return "\n".join(lines)
 
 
-def send_telegram_message(message: str, token: str, chat_id: str, thread_id: str) -> tuple[bool, str]:
-    payload = {"chat_id": chat_id, "text": message, "disable_web_page_preview": "true"}
+def send_telegram_message_with_markup(
+    message: str,
+    token: str,
+    chat_id: str,
+    thread_id: str,
+    reply_markup: dict[str, object] | None = None,
+) -> tuple[bool, dict[str, object] | None, str]:
+    payload: dict[str, object] = {
+        "chat_id": chat_id,
+        "text": message,
+        "disable_web_page_preview": True,
+    }
     if thread_id:
         payload["message_thread_id"] = thread_id
-    request = Request(
-        f"https://api.telegram.org/bot{token}/sendMessage",
-        data=urlencode(payload).encode("utf-8"),
-        headers={
-            "User-Agent": USER_AGENT,
-            "Content-Type": "application/x-www-form-urlencoded",
-        },
+    if reply_markup:
+        payload["reply_markup"] = reply_markup
+    ok, result, error = telegram_api_request("sendMessage", token, payload)
+    return ok, result if isinstance(result, dict) else None, error
+
+
+def send_telegram_message(message: str, token: str, chat_id: str, thread_id: str) -> tuple[bool, str]:
+    ok, _, error = send_telegram_message_with_markup(message, token, chat_id, thread_id)
+    return ok, error
+
+
+def edit_telegram_message(
+    message: str,
+    token: str,
+    chat_id: str,
+    message_id: int,
+    reply_markup: dict[str, object] | None = None,
+) -> tuple[bool, str]:
+    payload: dict[str, object] = {
+        "chat_id": chat_id,
+        "message_id": message_id,
+        "text": message,
+        "disable_web_page_preview": True,
+    }
+    if reply_markup:
+        payload["reply_markup"] = reply_markup
+    ok, _, error = telegram_api_request("editMessageText", token, payload)
+    return ok, error
+
+
+def answer_telegram_callback_query(
+    callback_query_id: str,
+    token: str,
+    text: str = "",
+    show_alert: bool = False,
+) -> tuple[bool, str]:
+    payload: dict[str, object] = {"callback_query_id": callback_query_id}
+    if text:
+        payload["text"] = text[:200]
+        payload["show_alert"] = show_alert
+    ok, _, error = telegram_api_request("answerCallbackQuery", token, payload)
+    return ok, error
+
+
+def fetch_telegram_updates(
+    token: str,
+    offset: int,
+    allowed_updates: list[str] | None = None,
+    limit: int = 20,
+    timeout: int = 0,
+) -> tuple[bool, list[dict[str, object]], str]:
+    payload: dict[str, object] = {
+        "offset": offset,
+        "limit": max(1, min(100, limit)),
+        "timeout": max(0, timeout),
+    }
+    if allowed_updates is not None:
+        payload["allowed_updates"] = allowed_updates
+    request_timeout_seconds = max(float(FETCH_TIMEOUT_SECONDS), float(timeout) + 5.0)
+    ok, result, error = telegram_api_request(
+        "getUpdates",
+        token,
+        payload,
+        request_timeout_seconds=request_timeout_seconds,
     )
-    try:
-        with urlopen(request, timeout=FETCH_TIMEOUT_SECONDS) as response:
-            body = response.read().decode("utf-8", errors="replace")
-    except (HTTPError, URLError, OSError, ValueError) as exc:
-        return False, clean_text(str(exc))
-    try:
-        payload_json = json.loads(body)
-    except json.JSONDecodeError:
-        return False, "Telegram API returned invalid JSON"
-    if payload_json.get("ok") is True:
-        return True, ""
-    return False, clean_text(str(payload_json.get("description", "Telegram API error")))
+    if not ok:
+        return False, [], error
+    if not isinstance(result, list):
+        return True, [], ""
+    return True, [item for item in result if isinstance(item, dict)], ""
 
 
 def deliver_pending_alerts(alert_state: dict[str, object], current_run_ts: str) -> tuple[int, str]:
@@ -1243,20 +1346,194 @@ def save_daily_digest_snapshot(daily_digest_file: str, snapshot: dict[str, objec
     atomic_write_json(Path(daily_digest_file), snapshot)
 
 
-def format_daily_digest_message(snapshot: dict[str, object]) -> str:
-    lines = [f"Daily Job Digest: {snapshot['digest_date_utc']}"]
-    for index, item in enumerate(snapshot["items"], start=1):
-        badges = [f"score {item['score']}", str(item["status"])]
-        if item["shortlisted"]:
-            badges.insert(0, "shortlist")
-        elif item["company_control"] == "whitelist":
-            badges.insert(0, "whitelist")
-        lines.append(f"{index}. {' | '.join(badges)}")
-        lines.append(f"{item['title']} at {item['company']}")
-        if item.get("reasons"):
-            lines.append(f"Why: {item['reasons'][0]}")
-        lines.append(str(item["link"]))
+def _format_daily_digest_item(item: dict[str, object], index: int) -> str:
+    badges = [f"score {item['score']}", str(item["status"])]
+    if item["shortlisted"]:
+        badges.insert(0, "shortlist")
+    elif item["company_control"] == "whitelist":
+        badges.insert(0, "whitelist")
+
+    lines = [
+        f"{index}. {' | '.join(badges)}",
+        f"{item['title']} at {item['company']}",
+    ]
+    if item.get("reasons"):
+        lines.append(f"Why: {item['reasons'][0]}")
+    lines.append(str(item["link"]))
     return "\n".join(lines)
+
+
+def format_daily_digest_messages(
+    snapshot: dict[str, object],
+    page_size: int,
+    max_chars: int = 3500,
+) -> list[str]:
+    items = list(snapshot.get("items", []))
+    if not items:
+        return [f"Daily Job Digest: {snapshot['digest_date_utc']}\nNo items."]
+
+    page_size = max(1, int(page_size))
+    item_blocks = [_format_daily_digest_item(item, index) for index, item in enumerate(items, start=1)]
+    pages: list[list[str]] = []
+    current_page: list[str] = []
+    current_length = 0
+    header_budget = 120
+
+    for block in item_blocks:
+        block_length = len(block) + 2
+        if current_page and (len(current_page) >= page_size or current_length + block_length + header_budget > max_chars):
+            pages.append(current_page)
+            current_page = []
+            current_length = 0
+        current_page.append(block)
+        current_length += block_length
+
+    if current_page:
+        pages.append(current_page)
+
+    total_pages = len(pages)
+    messages = []
+    first_item_index = 1
+    for page_number, page_blocks in enumerate(pages, start=1):
+        last_item_index = first_item_index + len(page_blocks) - 1
+        lines = [
+            f"Daily Job Digest: {snapshot['digest_date_utc']}",
+            f"Page {page_number}/{total_pages} | Jobs {first_item_index}-{last_item_index} of {snapshot['item_count']}",
+            "",
+            "\n\n".join(page_blocks),
+        ]
+        messages.append("\n".join(lines).strip())
+        first_item_index = last_item_index + 1
+    return messages
+
+
+def format_daily_digest_message(snapshot: dict[str, object]) -> str:
+    return format_daily_digest_messages(snapshot, page_size=max(1, len(snapshot.get("items", []))))[0]
+
+
+def _build_digest_callback_data(session_id: str, page_token: int | str) -> str:
+    return f"dg:{session_id}:{page_token}"
+
+
+def parse_digest_callback_data(value: object) -> tuple[str | None, str | None]:
+    data = clean_text(str(value))
+    if not data.startswith("dg:"):
+        return None, None
+    parts = data.split(":", 2)
+    if len(parts) != 3:
+        return None, None
+    session_id = clean_text(parts[1])
+    page_token = clean_text(parts[2])
+    if not session_id or not page_token:
+        return None, None
+    return session_id, page_token
+
+
+def build_daily_digest_keyboard(session_id: str, page_index: int, total_pages: int) -> dict[str, object] | None:
+    if total_pages <= 1:
+        return None
+    previous_target: int | str = page_index - 1 if page_index > 0 else "noop"
+    next_target: int | str = page_index + 1 if page_index < total_pages - 1 else "noop"
+    return {
+        "inline_keyboard": [
+            [
+                {"text": "◀ Prev", "callback_data": _build_digest_callback_data(session_id, previous_target)},
+                {"text": f"{page_index + 1}/{total_pages}", "callback_data": _build_digest_callback_data(session_id, "noop")},
+                {"text": "Next ▶", "callback_data": _build_digest_callback_data(session_id, next_target)},
+            ]
+        ]
+    }
+
+
+def process_telegram_callback_updates(timeout: int = 0, limit: int = 20) -> tuple[int, str]:
+    token, _, _ = load_telegram_settings()
+    if not token:
+        return 0, ""
+
+    update_offset = storage.load_telegram_update_offset(STATE_DB_FILE)
+    ok, updates, error = fetch_telegram_updates(
+        token,
+        update_offset,
+        allowed_updates=["callback_query"],
+        limit=limit,
+        timeout=timeout,
+    )
+    if not ok:
+        return 0, error
+
+    handled_count = 0
+    last_error = ""
+    next_offset = update_offset
+    for update in updates:
+        update_id = safe_int(update.get("update_id", 0), 0)
+        next_offset = max(next_offset, update_id + 1)
+
+        callback_query = update.get("callback_query")
+        if not isinstance(callback_query, dict):
+            continue
+
+        callback_query_id = clean_text(str(callback_query.get("id", "")))
+        session_id, page_token = parse_digest_callback_data(callback_query.get("data", ""))
+        if session_id is None or page_token is None:
+            if callback_query_id:
+                answer_telegram_callback_query(callback_query_id, token)
+            continue
+
+        if page_token == "noop":
+            if callback_query_id:
+                answer_telegram_callback_query(callback_query_id, token)
+            continue
+
+        session = storage.load_telegram_digest_session(STATE_DB_FILE, session_id)
+        if session is None:
+            if callback_query_id:
+                answer_telegram_callback_query(callback_query_id, token, "This digest is no longer available.")
+            continue
+
+        pages = list(session["pages"])
+        if not pages:
+            if callback_query_id:
+                answer_telegram_callback_query(callback_query_id, token, "This digest is empty.")
+            continue
+
+        page_index = max(0, min(len(pages) - 1, safe_int(page_token, 0)))
+        message = callback_query.get("message")
+        if not isinstance(message, dict):
+            if callback_query_id:
+                answer_telegram_callback_query(callback_query_id, token, "Message context missing.", True)
+            continue
+
+        chat = message.get("chat")
+        chat_id = ""
+        if isinstance(chat, dict):
+            chat_id = clean_text(str(chat.get("id", "")))
+        message_id = safe_int(message.get("message_id", 0), 0)
+        if not chat_id or not message_id:
+            if callback_query_id:
+                answer_telegram_callback_query(callback_query_id, token, "Message context missing.", True)
+            continue
+
+        keyboard = build_daily_digest_keyboard(session_id, page_index, len(pages))
+        ok, edit_error = edit_telegram_message(
+            pages[page_index],
+            token,
+            chat_id,
+            message_id,
+            keyboard,
+        )
+        if not ok:
+            last_error = edit_error
+            if callback_query_id:
+                answer_telegram_callback_query(callback_query_id, token, f"Unable to change page: {edit_error}", True)
+            continue
+
+        if callback_query_id:
+            answer_telegram_callback_query(callback_query_id, token)
+        handled_count += 1
+
+    if next_offset != update_offset:
+        storage.save_telegram_update_offset(STATE_DB_FILE, next_offset)
+    return handled_count, last_error
 
 
 def maybe_send_daily_digest(
@@ -1285,14 +1562,24 @@ def maybe_send_daily_digest(
         error = "Telegram credentials not configured; daily digest not sent."
         applications_state["last_digest_error"] = error
         return False, error
-    ok, error = send_telegram_message(format_daily_digest_message(snapshot), token, chat_id, thread_id)
-    if ok:
-        applications_state["last_digest_utc"] = current_run_ts
-        applications_state["last_digest_date_utc"] = digest_date
-        applications_state["last_digest_error"] = ""
-        return True, ""
-    applications_state["last_digest_error"] = error
-    return False, error
+    digest_messages = format_daily_digest_messages(snapshot, int(digest_settings["page_size"]))
+    session_id = uuid.uuid4().hex[:12]
+    storage.save_telegram_digest_session(STATE_DB_FILE, session_id, current_run_ts, digest_messages)
+    keyboard = build_daily_digest_keyboard(session_id, 0, len(digest_messages))
+    ok, _, error = send_telegram_message_with_markup(
+        digest_messages[0],
+        token,
+        chat_id,
+        thread_id,
+        keyboard,
+    )
+    if not ok:
+        applications_state["last_digest_error"] = error
+        return False, error
+    applications_state["last_digest_utc"] = current_run_ts
+    applications_state["last_digest_date_utc"] = digest_date
+    applications_state["last_digest_error"] = ""
+    return True, ""
 
 
 def build_application_briefs_snapshot(

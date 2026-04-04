@@ -305,6 +305,216 @@ class PullJobsTestCase(unittest.TestCase):
         self.assertGreater(good_eval["score"], bad_eval["score"])
         self.assertIn("feedback", " ".join(good_eval["reasons"]).lower())
 
+    def test_format_daily_digest_messages_splits_pages(self) -> None:
+        snapshot = {
+            "digest_date_utc": "2026-04-04",
+            "item_count": 5,
+            "items": [
+                {
+                    "title": f"Role {index}",
+                    "company": "Example Co",
+                    "link": f"https://example.com/jobs/{index}",
+                    "status": "new",
+                    "score": 50 + index,
+                    "rank": 60 + index,
+                    "shortlisted": index == 1,
+                    "company_control": "priority" if index == 1 else "none",
+                    "role_profile": "",
+                    "reasons": [f"Reason {index}"],
+                    "first_seen_utc": "2026-04-04T10:00:00Z",
+                    "last_seen_utc": "2026-04-04T10:00:00Z",
+                    "age_hours": 1.0,
+                }
+                for index in range(1, 6)
+            ],
+        }
+
+        messages = pull_jobs.matching.format_daily_digest_messages(snapshot, page_size=2)
+        self.assertEqual(len(messages), 3)
+        self.assertIn("Page 1/3 | Jobs 1-2 of 5", messages[0])
+        self.assertIn("Page 2/3 | Jobs 3-4 of 5", messages[1])
+        self.assertIn("Page 3/3 | Jobs 5-5 of 5", messages[2])
+        self.assertIn("1. shortlist | score 51 | new", messages[0])
+        self.assertIn("5. score 55 | new", messages[2])
+
+    def test_maybe_send_daily_digest_sends_interactive_first_page(self) -> None:
+        search_config = self.write_search_config(
+            {
+                "daily_digest": {
+                    "enabled": True,
+                    "hour_utc": 7,
+                    "max_items": 5,
+                    "page_size": 2,
+                },
+                "feedback": {"enabled": False},
+            }
+        )
+        applications_state = pull_jobs.fresh_applications_state()
+        applications_state["applications"] = [
+            pull_jobs.normalize_application_record(
+                {
+                    "title": f"IT Support Engineer {index} at Monzo",
+                    "description": "London hybrid support role with Active Directory and Microsoft 365.",
+                    "link": f"https://example.com/jobs/{index}",
+                    "company": "Monzo",
+                    "source": "good_board",
+                    "status": "new",
+                    "score": 55 + index,
+                    "best_score": 55 + index,
+                    "reasons": [f"Reason {index}"],
+                    "first_seen_utc": "2026-04-04T06:00:00Z",
+                    "last_seen_utc": "2026-04-04T06:00:00Z",
+                }
+            )
+            for index in range(1, 6)
+        ]
+        applications_state["applications"] = [app for app in applications_state["applications"] if app]
+        snapshot = pull_jobs.build_daily_digest_snapshot(
+            "2026-04-04T10:00:00Z",
+            applications_state,
+            search_config,
+        )
+
+        sent_messages: list[tuple[str, dict[str, object] | None]] = []
+
+        def fake_send(
+            message: str,
+            token: str,
+            chat_id: str,
+            thread_id: str,
+            reply_markup: dict[str, object] | None = None,
+        ) -> tuple[bool, dict[str, object] | None, str]:
+            sent_messages.append((message, reply_markup))
+            return True, {"message_id": 123}, ""
+
+        with (
+            mock.patch("jobbot.matching.load_telegram_settings", return_value=("token", "chat", "")),
+            mock.patch("jobbot.matching.send_telegram_message_with_markup", side_effect=fake_send),
+        ):
+            sent, error = pull_jobs.maybe_send_daily_digest(
+                applications_state,
+                snapshot,
+                "2026-04-04T10:00:00Z",
+                search_config,
+            )
+
+        self.assertTrue(sent)
+        self.assertEqual(error, "")
+        self.assertEqual(len(sent_messages), 1)
+        first_message, keyboard = sent_messages[0]
+        self.assertIn("Page 1/3 | Jobs 1-2 of 5", first_message)
+        self.assertIsNotNone(keyboard)
+        self.assertEqual(len(keyboard["inline_keyboard"][0]), 3)
+        session_callback = keyboard["inline_keyboard"][0][2]["callback_data"]
+        session_id = session_callback.split(":")[1]
+        session = jobbot_storage.load_telegram_digest_session(pull_jobs.STATE_DB_FILE, session_id)
+        self.assertIsNotNone(session)
+        self.assertEqual(len(session["pages"]), 3)
+        self.assertEqual(applications_state["last_digest_date_utc"], "2026-04-04")
+
+    def test_process_telegram_callback_updates_edits_digest_message(self) -> None:
+        jobbot_storage.save_telegram_digest_session(
+            pull_jobs.STATE_DB_FILE,
+            "session123",
+            "2026-04-04T10:00:00Z",
+            [
+                "Daily Job Digest: 2026-04-04\nPage 1/3 | Jobs 1-2 of 5\n\nPage 1",
+                "Daily Job Digest: 2026-04-04\nPage 2/3 | Jobs 3-4 of 5\n\nPage 2",
+                "Daily Job Digest: 2026-04-04\nPage 3/3 | Jobs 5-5 of 5\n\nPage 3",
+            ],
+        )
+
+        edit_calls: list[tuple[str, str, str, int, dict[str, object] | None]] = []
+        answer_calls: list[tuple[str, str, str, bool]] = []
+
+        def fake_edit(
+            message: str,
+            token: str,
+            chat_id: str,
+            message_id: int,
+            reply_markup: dict[str, object] | None = None,
+        ) -> tuple[bool, str]:
+            edit_calls.append((message, token, chat_id, message_id, reply_markup))
+            return True, ""
+
+        def fake_answer(
+            callback_query_id: str,
+            token: str,
+            text: str = "",
+            show_alert: bool = False,
+        ) -> tuple[bool, str]:
+            answer_calls.append((callback_query_id, token, text, show_alert))
+            return True, ""
+
+        updates = [
+            {
+                "update_id": 1,
+                "callback_query": {
+                    "id": "cb-1",
+                    "data": "dg:session123:1",
+                    "message": {
+                        "message_id": 77,
+                        "chat": {"id": "chat-123"},
+                    },
+                },
+            }
+        ]
+
+        with (
+            mock.patch("jobbot.matching.load_telegram_settings", return_value=("token", "", "")),
+            mock.patch("jobbot.matching.fetch_telegram_updates", return_value=(True, updates, "")),
+            mock.patch("jobbot.matching.edit_telegram_message", side_effect=fake_edit),
+            mock.patch("jobbot.matching.answer_telegram_callback_query", side_effect=fake_answer),
+        ):
+            handled, error = pull_jobs.process_telegram_callback_updates()
+
+        self.assertEqual(handled, 1)
+        self.assertEqual(error, "")
+        self.assertEqual(jobbot_storage.load_telegram_update_offset(pull_jobs.STATE_DB_FILE), 2)
+        self.assertEqual(len(edit_calls), 1)
+        self.assertIn("Page 2/3 | Jobs 3-4 of 5", edit_calls[0][0])
+        self.assertEqual(edit_calls[0][2], "chat-123")
+        self.assertEqual(edit_calls[0][3], 77)
+        self.assertIsNotNone(edit_calls[0][4])
+        self.assertEqual(edit_calls[0][4]["inline_keyboard"][0][1]["text"], "2/3")
+        self.assertEqual(len(answer_calls), 1)
+        self.assertEqual(answer_calls[0][0], "cb-1")
+
+    def test_fetch_telegram_updates_extends_http_timeout_for_long_polling(self) -> None:
+        api_calls: list[tuple[str, str, dict[str, object] | None, float | None]] = []
+
+        def fake_request(
+            method: str,
+            token: str,
+            payload: dict[str, object] | None = None,
+            request_timeout_seconds: float | None = None,
+        ) -> tuple[bool, object, str]:
+            api_calls.append((method, token, payload, request_timeout_seconds))
+            return True, [], ""
+
+        with mock.patch("jobbot.matching.telegram_api_request", side_effect=fake_request):
+            ok, updates, error = pull_jobs.matching.fetch_telegram_updates(
+                "token",
+                12,
+                allowed_updates=["callback_query"],
+                limit=5,
+                timeout=25,
+            )
+
+        self.assertTrue(ok)
+        self.assertEqual(updates, [])
+        self.assertEqual(error, "")
+        self.assertEqual(len(api_calls), 1)
+        method, token, payload, request_timeout_seconds = api_calls[0]
+        self.assertEqual(method, "getUpdates")
+        self.assertEqual(token, "token")
+        self.assertIsNotNone(payload)
+        self.assertEqual(payload["offset"], 12)
+        self.assertEqual(payload["limit"], 5)
+        self.assertEqual(payload["timeout"], 25)
+        self.assertEqual(payload["allowed_updates"], ["callback_query"])
+        self.assertEqual(request_timeout_seconds, 30.0)
+
     def test_fetch_generic_html_board_jobs_parses_jsonld_job(self) -> None:
         board = {
             "name": "example_generic_html",

@@ -14,6 +14,8 @@ def _connect(db_file: str) -> sqlite3.Connection:
     connection = sqlite3.connect(db_path)
     connection.row_factory = sqlite3.Row
     connection.execute("PRAGMA foreign_keys = ON")
+    connection.execute("PRAGMA journal_mode = WAL")
+    connection.execute("PRAGMA busy_timeout = 5000")
     _initialize_database(connection)
     return connection
 
@@ -92,6 +94,15 @@ def _initialize_database(connection: sqlite3.Connection) -> None:
 
         CREATE INDEX IF NOT EXISTS idx_application_fingerprints_application_link
             ON application_fingerprints(application_link);
+
+        CREATE TABLE IF NOT EXISTS telegram_digest_sessions (
+            session_id TEXT PRIMARY KEY,
+            created_at TEXT NOT NULL,
+            pages_json TEXT NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_telegram_digest_sessions_created_at
+            ON telegram_digest_sessions(created_at);
         """
     )
 
@@ -539,3 +550,83 @@ def save_applications_state(db_file: str, applications_state: dict[str, object])
                     "last_cleanup_utc": applications_state.get("last_cleanup_utc", ""),
                 },
             )
+
+
+def load_telegram_update_offset(db_file: str) -> int:
+    with _connect(db_file) as connection:
+        metadata = _load_scope_metadata(connection, "telegram")
+    try:
+        return max(0, int(metadata.get("update_offset", "0")))
+    except ValueError:
+        return 0
+
+
+def save_telegram_update_offset(db_file: str, offset: int) -> None:
+    with _connect(db_file) as connection:
+        with connection:
+            metadata = _load_scope_metadata(connection, "telegram")
+            metadata["update_offset"] = max(0, int(offset))
+            _save_scope_metadata(connection, "telegram", metadata)
+
+
+def save_telegram_digest_session(
+    db_file: str,
+    session_id: str,
+    created_at: str,
+    pages: list[str],
+    keep_latest: int = 20,
+) -> None:
+    with _connect(db_file) as connection:
+        with connection:
+            connection.execute(
+                """
+                INSERT OR REPLACE INTO telegram_digest_sessions(session_id, created_at, pages_json)
+                VALUES (?, ?, ?)
+                """,
+                (session_id, created_at, json.dumps(list(pages), ensure_ascii=False)),
+            )
+            if keep_latest > 0:
+                row = connection.execute("SELECT COUNT(*) AS count FROM telegram_digest_sessions").fetchone()
+                total_count = int(row["count"]) if row is not None else 0
+                overflow = max(0, total_count - keep_latest)
+                if overflow:
+                    connection.execute(
+                        """
+                        DELETE FROM telegram_digest_sessions
+                        WHERE session_id IN (
+                            SELECT session_id
+                            FROM telegram_digest_sessions
+                            ORDER BY created_at ASC, session_id ASC
+                            LIMIT ?
+                        )
+                        """,
+                        (overflow,),
+                    )
+
+
+def load_telegram_digest_session(db_file: str, session_id: str) -> dict[str, object] | None:
+    with _connect(db_file) as connection:
+        row = connection.execute(
+            """
+            SELECT session_id, created_at, pages_json
+            FROM telegram_digest_sessions
+            WHERE session_id = ?
+            """,
+            (session_id,),
+        ).fetchone()
+    if row is None:
+        return None
+    try:
+        pages = json.loads(str(row["pages_json"]))
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(pages, list):
+        return None
+    page_texts = [str(page) for page in pages if str(page)]
+    if not page_texts:
+        return None
+    return {
+        "session_id": str(row["session_id"]),
+        "created_at": str(row["created_at"]),
+        "pages": page_texts,
+    }

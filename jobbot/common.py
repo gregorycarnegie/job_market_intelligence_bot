@@ -25,6 +25,7 @@ GENERIC_HTML_MAX_START_URLS = 10
 GENERIC_HTML_MAX_JOB_LINKS = 60
 DEFAULT_DAILY_DIGEST_HOUR_UTC = 7
 DEFAULT_DAILY_DIGEST_MAX_ITEMS = 8
+DEFAULT_DAILY_DIGEST_PAGE_SIZE = 4
 DEFAULT_APPLICATION_BRIEFS_MAX_ITEMS = 10
 APPLICATION_STATUSES = {"new", "reviewed", "applied", "rejected", "interview"}
 DEFAULT_DAILY_DIGEST_STATUSES = ["new", "reviewed", "applied", "interview"]
@@ -731,6 +732,12 @@ def load_job_search_config(config_file: str) -> dict[str, object]:
             "enabled": parse_bool(daily_digest.get("enabled", True), True),
             "hour_utc": _clamp_int(daily_digest.get("hour_utc", DEFAULT_DAILY_DIGEST_HOUR_UTC), 0, 23, DEFAULT_DAILY_DIGEST_HOUR_UTC),
             "max_items": _clamp_int(daily_digest.get("max_items", DEFAULT_DAILY_DIGEST_MAX_ITEMS), 1, 20, DEFAULT_DAILY_DIGEST_MAX_ITEMS),
+            "page_size": _clamp_int(
+                daily_digest.get("page_size", DEFAULT_DAILY_DIGEST_PAGE_SIZE),
+                1,
+                10,
+                DEFAULT_DAILY_DIGEST_PAGE_SIZE,
+            ),
             "include_statuses": digest_statuses or list(DEFAULT_DAILY_DIGEST_STATUSES),
         },
         "feedback": {
