@@ -319,8 +319,8 @@ def looks_like_generic_job_link(
 
     normalized_url = normalize_text(url)
     normalized_anchor = normalize_text(anchor_text)
-    regexes = [re.compile(pattern, re.IGNORECASE) for pattern in board["job_link_regexes"]]
-    if any(regex.search(url) for regex in regexes):
+    patterns = board.get("_job_link_patterns") or [re.compile(p, re.IGNORECASE) for p in board["job_link_regexes"]]
+    if any(pattern.search(url) for pattern in patterns):
         return True
 
     keywords = list(board["job_link_keywords"]) or list(DEFAULT_GENERIC_JOB_LINK_KEYWORDS)
@@ -361,9 +361,6 @@ def fetch_generic_html_board_jobs(board: dict[str, object]) -> list[dict[str, st
     ]
 
     for candidate_link in candidate_links:
-        if candidate_link in seen_links:
-            continue
-
         html_text = fetch_feed(candidate_link)
         jsonld_items = [
             item
@@ -606,6 +603,10 @@ def normalize_company_board(raw_board: dict[str, object]) -> dict[str, object] |
             lower=True,
         )
         normalized_board["job_link_regexes"] = normalize_string_list(raw_board.get("job_link_regexes", []))
+        normalized_board["_job_link_patterns"] = [
+            re.compile(pattern, re.IGNORECASE)
+            for pattern in normalized_board["job_link_regexes"]
+        ]
         normalized_board["max_job_pages"] = max(
             1,
             min(200, safe_int(raw_board.get("max_job_pages", GENERIC_HTML_MAX_JOB_LINKS), GENERIC_HTML_MAX_JOB_LINKS)),

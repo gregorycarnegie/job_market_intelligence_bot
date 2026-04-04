@@ -421,11 +421,13 @@ def join_text_parts(*parts: object) -> str:
 def normalize_string_list(values: object, *, lower: bool = False) -> list[str]:
     raw_values = values if isinstance(values, list) else [values] if values else []
     normalized_values = []
+    seen: set[str] = set()
     for value in raw_values:
         normalized = normalize_text(value) if lower else clean_text(str(value))
-        if normalized:
+        if normalized and normalized not in seen:
             normalized_values.append(normalized)
-    return dedupe_preserving_order(normalized_values)
+            seen.add(normalized)
+    return normalized_values
 
 
 def normalize_url_list(values: object) -> list[str]:
@@ -688,6 +690,10 @@ def normalize_role_profiles(raw_profiles: object) -> list[dict[str, object]]:
     return normalized_profiles
 
 
+def _clamp_int(value: object, min_val: int, max_val: int, default: int) -> int:
+    return max(min_val, min(max_val, safe_int(value, default)))
+
+
 def load_job_search_config(config_file: str) -> dict[str, object]:
     raw_data: dict[str, object] = {}
     config_path = Path(config_file)
@@ -721,77 +727,20 @@ def load_job_search_config(config_file: str) -> dict[str, object]:
         "role_profiles": normalize_role_profiles(raw_data.get("role_profiles")),
         "daily_digest": {
             "enabled": parse_bool(daily_digest.get("enabled", True), True),
-            "hour_utc": max(0, min(23, safe_int(daily_digest.get("hour_utc", DEFAULT_DAILY_DIGEST_HOUR_UTC), DEFAULT_DAILY_DIGEST_HOUR_UTC))),
-            "max_items": max(1, min(20, safe_int(daily_digest.get("max_items", DEFAULT_DAILY_DIGEST_MAX_ITEMS), DEFAULT_DAILY_DIGEST_MAX_ITEMS))),
+            "hour_utc": _clamp_int(daily_digest.get("hour_utc", DEFAULT_DAILY_DIGEST_HOUR_UTC), 0, 23, DEFAULT_DAILY_DIGEST_HOUR_UTC),
+            "max_items": _clamp_int(daily_digest.get("max_items", DEFAULT_DAILY_DIGEST_MAX_ITEMS), 1, 20, DEFAULT_DAILY_DIGEST_MAX_ITEMS),
             "include_statuses": digest_statuses or list(DEFAULT_DAILY_DIGEST_STATUSES),
         },
         "feedback": {
             "enabled": parse_bool(feedback.get("enabled", True), True),
-            "min_samples": max(1, min(20, safe_int(feedback.get("min_samples", DEFAULT_FEEDBACK_MIN_SAMPLES), DEFAULT_FEEDBACK_MIN_SAMPLES))),
-            "max_source_adjustment": max(
-                1,
-                min(
-                    20,
-                    safe_int(
-                        feedback.get("max_source_adjustment", DEFAULT_MAX_SOURCE_FEEDBACK_ADJUSTMENT),
-                        DEFAULT_MAX_SOURCE_FEEDBACK_ADJUSTMENT,
-                    ),
-                ),
-            ),
-            "max_keyword_adjustment": max(
-                1,
-                min(
-                    20,
-                    safe_int(
-                        feedback.get("max_keyword_adjustment", DEFAULT_MAX_KEYWORD_FEEDBACK_ADJUSTMENT),
-                        DEFAULT_MAX_KEYWORD_FEEDBACK_ADJUSTMENT,
-                    ),
-                ),
-            ),
-            "keyword_limit": max(
-                1,
-                min(8, safe_int(feedback.get("keyword_limit", DEFAULT_FEEDBACK_KEYWORD_LIMIT), DEFAULT_FEEDBACK_KEYWORD_LIMIT)),
-            ),
-            "new_reviewed_retention_days": max(
-                30,
-                min(
-                    3650,
-                    safe_int(
-                        feedback.get("new_reviewed_retention_days", DEFAULT_NEW_REVIEWED_RETENTION_DAYS),
-                        DEFAULT_NEW_REVIEWED_RETENTION_DAYS,
-                    ),
-                ),
-            ),
-            "rejected_retention_days": max(
-                30,
-                min(
-                    3650,
-                    safe_int(
-                        feedback.get("rejected_retention_days", DEFAULT_REJECTED_RETENTION_DAYS),
-                        DEFAULT_REJECTED_RETENTION_DAYS,
-                    ),
-                ),
-            ),
-            "applied_retention_days": max(
-                30,
-                min(
-                    3650,
-                    safe_int(
-                        feedback.get("applied_retention_days", DEFAULT_APPLIED_RETENTION_DAYS),
-                        DEFAULT_APPLIED_RETENTION_DAYS,
-                    ),
-                ),
-            ),
-            "interview_retention_days": max(
-                30,
-                min(
-                    3650,
-                    safe_int(
-                        feedback.get("interview_retention_days", DEFAULT_INTERVIEW_RETENTION_DAYS),
-                        DEFAULT_INTERVIEW_RETENTION_DAYS,
-                    ),
-                ),
-            ),
+            "min_samples": _clamp_int(feedback.get("min_samples", DEFAULT_FEEDBACK_MIN_SAMPLES), 1, 20, DEFAULT_FEEDBACK_MIN_SAMPLES),
+            "max_source_adjustment": _clamp_int(feedback.get("max_source_adjustment", DEFAULT_MAX_SOURCE_FEEDBACK_ADJUSTMENT), 1, 20, DEFAULT_MAX_SOURCE_FEEDBACK_ADJUSTMENT),
+            "max_keyword_adjustment": _clamp_int(feedback.get("max_keyword_adjustment", DEFAULT_MAX_KEYWORD_FEEDBACK_ADJUSTMENT), 1, 20, DEFAULT_MAX_KEYWORD_FEEDBACK_ADJUSTMENT),
+            "keyword_limit": _clamp_int(feedback.get("keyword_limit", DEFAULT_FEEDBACK_KEYWORD_LIMIT), 1, 8, DEFAULT_FEEDBACK_KEYWORD_LIMIT),
+            "new_reviewed_retention_days": _clamp_int(feedback.get("new_reviewed_retention_days", DEFAULT_NEW_REVIEWED_RETENTION_DAYS), 30, 3650, DEFAULT_NEW_REVIEWED_RETENTION_DAYS),
+            "rejected_retention_days": _clamp_int(feedback.get("rejected_retention_days", DEFAULT_REJECTED_RETENTION_DAYS), 30, 3650, DEFAULT_REJECTED_RETENTION_DAYS),
+            "applied_retention_days": _clamp_int(feedback.get("applied_retention_days", DEFAULT_APPLIED_RETENTION_DAYS), 30, 3650, DEFAULT_APPLIED_RETENTION_DAYS),
+            "interview_retention_days": _clamp_int(feedback.get("interview_retention_days", DEFAULT_INTERVIEW_RETENTION_DAYS), 30, 3650, DEFAULT_INTERVIEW_RETENTION_DAYS),
         },
     }
 
