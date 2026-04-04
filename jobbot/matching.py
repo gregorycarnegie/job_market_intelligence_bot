@@ -1411,13 +1411,17 @@ def format_daily_digest_message(snapshot: dict[str, object]) -> str:
     return format_daily_digest_messages(snapshot, page_size=max(1, len(snapshot.get("items", []))))[0]
 
 
+_DIGEST_CALLBACK_PREFIX = "dg:"
+_NOOP_PAGE_TOKEN = "noop"
+
+
 def _build_digest_callback_data(session_id: str, page_token: int | str) -> str:
-    return f"dg:{session_id}:{page_token}"
+    return f"{_DIGEST_CALLBACK_PREFIX}{session_id}:{page_token}"
 
 
 def parse_digest_callback_data(value: object) -> tuple[str | None, str | None]:
     data = clean_text(str(value))
-    if not data.startswith("dg:"):
+    if not data.startswith(_DIGEST_CALLBACK_PREFIX):
         return None, None
     parts = data.split(":", 2)
     if len(parts) != 3:
@@ -1432,17 +1436,22 @@ def parse_digest_callback_data(value: object) -> tuple[str | None, str | None]:
 def build_daily_digest_keyboard(session_id: str, page_index: int, total_pages: int) -> dict[str, object] | None:
     if total_pages <= 1:
         return None
-    previous_target: int | str = page_index - 1 if page_index > 0 else "noop"
-    next_target: int | str = page_index + 1 if page_index < total_pages - 1 else "noop"
+    previous_target: int | str = page_index - 1 if page_index > 0 else _NOOP_PAGE_TOKEN
+    next_target: int | str = page_index + 1 if page_index < total_pages - 1 else _NOOP_PAGE_TOKEN
     return {
         "inline_keyboard": [
             [
                 {"text": "◀ Prev", "callback_data": _build_digest_callback_data(session_id, previous_target)},
-                {"text": f"{page_index + 1}/{total_pages}", "callback_data": _build_digest_callback_data(session_id, "noop")},
+                {"text": f"{page_index + 1}/{total_pages}", "callback_data": _build_digest_callback_data(session_id, _NOOP_PAGE_TOKEN)},
                 {"text": "Next ▶", "callback_data": _build_digest_callback_data(session_id, next_target)},
             ]
         ]
     }
+
+
+def _ack_callback(callback_query_id: str, token: str, text: str = "", show_alert: bool = False) -> None:
+    if callback_query_id:
+        answer_telegram_callback_query(callback_query_id, token, text, show_alert)
 
 
 def process_telegram_callback_updates(timeout: int = 0, limit: int = 20) -> tuple[int, str]:
@@ -1475,32 +1484,27 @@ def process_telegram_callback_updates(timeout: int = 0, limit: int = 20) -> tupl
         callback_query_id = clean_text(str(callback_query.get("id", "")))
         session_id, page_token = parse_digest_callback_data(callback_query.get("data", ""))
         if session_id is None or page_token is None:
-            if callback_query_id:
-                answer_telegram_callback_query(callback_query_id, token)
+            _ack_callback(callback_query_id, token)
             continue
 
-        if page_token == "noop":
-            if callback_query_id:
-                answer_telegram_callback_query(callback_query_id, token)
+        if page_token == _NOOP_PAGE_TOKEN:
+            _ack_callback(callback_query_id, token)
             continue
 
         session = storage.load_telegram_digest_session(STATE_DB_FILE, session_id)
         if session is None:
-            if callback_query_id:
-                answer_telegram_callback_query(callback_query_id, token, "This digest is no longer available.")
+            _ack_callback(callback_query_id, token, "This digest is no longer available.")
             continue
 
-        pages = list(session["pages"])
+        pages = session["pages"]
         if not pages:
-            if callback_query_id:
-                answer_telegram_callback_query(callback_query_id, token, "This digest is empty.")
+            _ack_callback(callback_query_id, token, "This digest is empty.")
             continue
 
         page_index = max(0, min(len(pages) - 1, safe_int(page_token, 0)))
         message = callback_query.get("message")
         if not isinstance(message, dict):
-            if callback_query_id:
-                answer_telegram_callback_query(callback_query_id, token, "Message context missing.", True)
+            _ack_callback(callback_query_id, token, "Message context missing.", True)
             continue
 
         chat = message.get("chat")
@@ -1509,8 +1513,7 @@ def process_telegram_callback_updates(timeout: int = 0, limit: int = 20) -> tupl
             chat_id = clean_text(str(chat.get("id", "")))
         message_id = safe_int(message.get("message_id", 0), 0)
         if not chat_id or not message_id:
-            if callback_query_id:
-                answer_telegram_callback_query(callback_query_id, token, "Message context missing.", True)
+            _ack_callback(callback_query_id, token, "Message context missing.", True)
             continue
 
         keyboard = build_daily_digest_keyboard(session_id, page_index, len(pages))
@@ -1523,12 +1526,10 @@ def process_telegram_callback_updates(timeout: int = 0, limit: int = 20) -> tupl
         )
         if not ok:
             last_error = edit_error
-            if callback_query_id:
-                answer_telegram_callback_query(callback_query_id, token, f"Unable to change page: {edit_error}", True)
+            _ack_callback(callback_query_id, token, f"Unable to change page: {edit_error}", True)
             continue
 
-        if callback_query_id:
-            answer_telegram_callback_query(callback_query_id, token)
+        _ack_callback(callback_query_id, token)
         handled_count += 1
 
     if next_offset != update_offset:

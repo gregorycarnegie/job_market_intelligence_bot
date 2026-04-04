@@ -2,7 +2,11 @@
   "permissions": {
     "allow": [
       "Bash(python -m pytest tests/ -q)",
-      "Bash(python -m unittest discover tests -v)"
+      "Bash(python -m unittest discover tests -v)",
+      "Bash(python -m pytest tests/test_pull_jobs.py tests/test_telegram_callback_worker.py -x -q)",
+      "Bash(python -m unittest tests.test_pull_jobs tests.test_telegram_callback_worker -v)",
+      "Bash(python -m unittest tests.test_pull_jobs.PullJobsTestCase.test_maybe_send_daily_digest_sends_interactive_first_page tests.test_pull_jobs.PullJobsTestCase.test_process_telegram_callback_updates_edits_digest_message -v)",
+      "Bash(grep -v \"^$\")"
     ]
   }
 }

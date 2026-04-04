@@ -564,9 +564,10 @@ def load_telegram_update_offset(db_file: str) -> int:
 def save_telegram_update_offset(db_file: str, offset: int) -> None:
     with _connect(db_file) as connection:
         with connection:
-            metadata = _load_scope_metadata(connection, "telegram")
-            metadata["update_offset"] = max(0, int(offset))
-            _save_scope_metadata(connection, "telegram", metadata)
+            connection.execute(
+                "INSERT OR REPLACE INTO state_metadata(scope, key, value) VALUES ('telegram', 'update_offset', ?)",
+                (str(max(0, int(offset))),),
+            )
 
 
 def save_telegram_digest_session(
