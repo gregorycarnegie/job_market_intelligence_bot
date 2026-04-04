@@ -77,10 +77,14 @@ def load_json_timestamp() -> str | None:
 def main() -> int:
     latest_ts, latest_csv_batch = load_latest_csv_batch()
     json_ts = load_json_timestamp()
+    json_path = Path(JSON_FILE)
 
     if latest_ts and latest_ts != json_ts:
         atomic_write_json(latest_csv_batch)
         print(f"Desc: Staged batch {latest_ts} ({len(latest_csv_batch)} jobs)")
+    elif not latest_ts and not json_path.exists():
+        atomic_write_json([])
+        print("Desc: Created empty desc.json because no matched jobs exist yet.")
     else:
         print("Desc: No new run detected or timestamp matches.")
     return 0

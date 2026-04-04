@@ -1,0 +1,76 @@
+{
+  "company_whitelist": [
+    "Jane Street",
+    "Bloomberg"
+  ],
+  "company_blacklist": [
+    "Example Recruiter Ltd"
+  ],
+  "priority_companies": [
+    "Monzo",
+    "Cloudflare"
+  ],
+  "daily_digest": {
+    "enabled": true,
+    "hour_utc": 7,
+    "max_items": 6,
+    "include_statuses": [
+      "new",
+      "reviewed",
+      "applied",
+      "interview"
+    ]
+  },
+  "feedback": {
+    "enabled": true,
+    "min_samples": 2,
+    "max_source_adjustment": 10,
+    "max_keyword_adjustment": 6,
+    "keyword_limit": 4,
+    "new_reviewed_retention_days": 120,
+    "rejected_retention_days": 180,
+    "applied_retention_days": 540,
+    "interview_retention_days": 730
+  },
+  "role_profiles": [
+    {
+      "name": "core_it_support",
+      "display_name": "Core IT Support",
+      "title_keywords": [
+        "it support engineer",
+        "service desk",
+        "desktop support",
+        "it technician"
+      ],
+      "description_keywords": [
+        "troubleshooting",
+        "user support",
+        "ticket management",
+        "hardware support"
+      ],
+      "title_boost": 18,
+      "description_boost": 5,
+      "priority": 100
+    },
+    {
+      "name": "systems_administration",
+      "display_name": "Systems Administration",
+      "title_keywords": [
+        "systems administrator",
+        "system administrator",
+        "sysadmin",
+        "endpoint engineer"
+      ],
+      "description_keywords": [
+        "active directory",
+        "azure ad",
+        "microsoft entra",
+        "windows",
+        "linux"
+      ],
+      "title_boost": 16,
+      "description_boost": 4,
+      "priority": 90
+    }
+  ]
+}

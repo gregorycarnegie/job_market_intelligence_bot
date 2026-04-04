@@ -17,9 +17,16 @@ This repository contains several files, part of the job market intelligence mech
 - `resume.json`: stores skills, preferences, and experience information that the Python scripts and OpenClaw rely on.
   OpenClaw will read the entire file once, while `pull_jobs.py` will pull special fields from this file in every execution (once every 60 seconds).
   OpenClaw will use AI credits to read the file and store it in memory, Python file will not use AI credits as it runs on the system level with Bash.
-- `pull_jobs.py`: fetches listings from several RSS jobs feeds (meant for computer reading), filters them based on location and skills from `resume.json` and stores selected listings in `jobs.csv` (a file that's being generated in the first run, and **updated continuously** - storing the **entire history of listings**, old and new)
+- `pull_jobs.py`: fetches listings from several RSS jobs feeds (meant for computer reading), scores them against `resume.json`, stores matched listings in `jobs.csv`, writes the latest scored batch to `matches.json`, keeps delivery state in `alerts_state.json`, and can send Telegram alerts directly without OpenClaw.
 - `pull_desc.py`: fetches listings **only** from the most recent timestamp of `jobs.csv`, stores them in `desc.json` (a file that's being generated in the first run, and **replaced continuously** - always storing **the most recent listings** and disposing of the rest). `desc.json` is the only file that OpenClaw is exposed to.
 - `exec_loop.sh`: a bash script that runs both Python files, one after the other, every 60 seconds. Meant to run with Nohup on the system level of the VPS (see instructions below).
+- `.env.example`: a template for optional direct Telegram delivery using `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID`.
+- `company_boards.json.example`: optional company-board config for Greenhouse, Lever, Ashby, and Workable sources.
+- `job_search_config.json.example`: optional search-operations config for company whitelist / blacklist, shortlist employers, daily digest settings, and role-profile weights.
+- `seen_jobs_state.json`: runtime state that remembers already reviewed items, including non-matches, so the same old feed entries are not rescored on every loop.
+- `application_briefs.json`: runtime snapshot of application-ready jobs with generated fit notes, resume bullet suggestions, and intro-message drafts.
+- `borderline_matches.json`: runtime snapshot of near-threshold jobs that are worth optional AI review instead of sending the entire feed to OpenClaw.
+- `feedback_metrics.json`: runtime snapshot of outcome tracking, learned source/keyword adjustments, and cleanup activity.
 
 <br>
 <img width="1920" alt="Screenshot of Finished Project - job alerts scheduled and coming in on WhatsApp" src="https://github.com/user-attachments/assets/e19573a1-a861-467b-8fc5-5657afaa1d19" />
@@ -28,7 +35,8 @@ This repository contains several files, part of the job market intelligence mech
 
 ## 🧰 Requirements
 
-- A self-hosted OpenClaw instance (running on VPS so it works even if you're computer is off).
+- A VPS or always-on Linux host.
+- OpenClaw only if you want the optional AI review / relay layer.
 - Basic familiarity with Linux terminal (no need to be an expert).
 - SSH access to your VPS (set up a root password in advance).
 - Python 3 installed on the server (automatic if you use the One Click Deploy image - instructions below).
@@ -46,7 +54,7 @@ Special fields to update (do not remove! they are used in the python scripts):
 
 - `location` - city, country
 - `target_roles`
-- `preferences` - remote, hybrid, minimum_salary_usd, relocation
+- `preferences` - remote, hybrid, preferred locations, minimum salary, relocation
 - `education`
 - `technical_skills` - skills
 <br>
@@ -114,7 +122,7 @@ cd job_market_intelligence_bot
 - copy files from your local directory into your remote server:
 
 ```bash
-scp pull_jobs.py pull_desc.py exec_loop.sh resume.json root@72.60.178.132:/docker/openclaw-cevb/data/.openclaw/workspace/
+scp pull_jobs.py pull_desc.py exec_loop.sh resume.json .env.example company_boards.json.example job_search_config.json.example root@72.60.178.132:/docker/openclaw-cevb/data/.openclaw/workspace/
 ```
 
 ### 6. Run exec_loop.sh ➿
@@ -144,17 +152,103 @@ cat jobs.csv
 cat desc.json
 ```
 
-If both files contain data - everything works great! and we can move on with the final instruction to OpenClaw.
+If both files contain data - everything works great!
+
+### 6.5 Recommended: Direct Telegram Alerts
+
+The repo can now send Telegram alerts directly from Python, which is cheaper and more reliable than using OpenClaw for the hot alert path.
+<br>
+Create a `.env` file from `.env.example` and fill in your bot token and chat ID:
+
+```bash
+cp .env.example .env
+```
+
+Generated runtime files:
+
+- `alerts_state.json` stores which links were already alerted and which alerts are still queued for retry.
+- `matches.json` stores the latest scored match batch with reasons and scores.
+- `seen_jobs_state.json` stores review fingerprints so already-seen non-matches and cross-source duplicates can be skipped.
+- `applications.json` stores the persistent application tracker with statuses like `new`, `reviewed`, `applied`, `rejected`, and `interview`.
+- `daily_digest.json` stores the current ranked daily digest snapshot based on score, freshness, and employer priority.
+- `application_briefs.json` stores the top application-ready jobs with generated “why this fits” notes, resume bullet suggestions, and intro-message drafts.
+- `borderline_matches.json` stores near-threshold candidates for optional AI review.
+- `feedback_metrics.json` stores outcome summaries, source/keyword performance, recommended score adjustments, and cleanup information.
+
+If `.env` is missing, the bot will still discover matches and queue them in `alerts_state.json`, but it will not send Telegram messages until credentials are present.
+
+### 6.6 Optional: Add Company Career Boards
+
+If you want to go beyond generic RSS feeds, copy `company_boards.json.example` to `company_boards.json` and add the employers you want to monitor.
+
+Supported platforms:
+
+- Greenhouse using the public Job Board API.
+- Lever using the public Postings API.
+- Ashby using the public Job Postings API.
+- Workable using the public account jobs endpoint by default.
+- Generic company careers pages using configurable HTML scraping plus JSON-LD job extraction.
+
+The bot will merge those board jobs into the same scoring, dedupe, review-history, and Telegram pipeline as the RSS feeds.
+
+For `generic_html` entries:
+
+- `start_urls` are the careers pages to fetch.
+- `allowed_domains` limits which discovered links are followed.
+- `job_link_keywords` and `job_link_regexes` help identify job-detail links.
+- `max_job_pages` caps how many discovered job pages are fetched per run.
+
+### 6.7 Optional: Add Search Controls, Shortlists, and Digest Settings
+
+If you want more control over which companies are prioritized and how daily review works, copy `job_search_config.json.example` to `job_search_config.json` and edit it.
+
+Supported controls:
+
+- `company_whitelist`: adds a score boost for preferred employers.
+- `company_blacklist`: hard-rejects employers you never want to see.
+- `priority_companies`: marks high-priority employers as shortlisted and boosts them harder than a normal whitelist.
+- `daily_digest`: controls whether a once-per-day digest is sent to Telegram, when it is sent, and how many tracked jobs it includes.
+- `feedback`: controls how aggressively the bot learns from `applied` / `interview` / `rejected` outcomes and how long old application records are retained.
+- `role_profiles`: lets you bias scoring so core IT support and sysadmin roles outrank adjacent engineering roles.
+
+`applications.json` is intended to be editable:
+
+- Change `status` as you move a job from `new` to `reviewed`, `applied`, `rejected`, or `interview`.
+- Add your own notes in the `notes` field.
+- The bot will observe those status changes and backfill fields like `status_observed_utc`, `applied_at_utc`, `interviewed_at_utc`, and `rejected_at_utc` on later runs.
+- Leave the rest of the fields to Python; they will be refreshed automatically as the same job reappears across feeds or boards.
+
+The tailoring layer is now generated in Python:
+
+- `why_this_fits` gives a fast explanation for why the job lines up with your target path.
+- `resume_bullet_suggestions` reuses the most relevant existing highlights from your resume for that specific role.
+- `intro_message` gives you a short application-ready note you can refine before sending.
+
+The feedback layer is also generated in Python:
+
+- `feedback_keywords` captures the matched role/skill phrases that the bot used when scoring the job.
+- `feedback_metrics.json` summarizes which sources and matched keywords are actually leading to interviews or rejections.
+- Those metrics are then folded back into scoring so the bot gradually prefers sources and themes that are working for you.
+- Old application records are pruned automatically based on the `feedback` retention settings in `job_search_config.json`.
 
 ### 7. Manually Set Up Cron Jobs in OpenClaw UI ⏰
 
-Back in OpenClaw, navigate to the "Cron Jobs" tab and set up a manual task named: "job_alerts" that runs every 5 minutes (or any other interval you’d like)
+OpenClaw is now optional.
+<br>
+If you still want OpenClaw as a secondary relay or AI review layer, navigate to the "Cron Jobs" tab and set up a manual task named: "job_alerts" that runs every 5 minutes (or any other interval you’d like)
 <br>
 Use the prompt from `openclaw_job_alerts_prompt.txt` as the full task description.
 <br>
 This stricter prompt matters: if you use a vague description, OpenClaw may send status updates like "no new matches" instead of staying silent when there is nothing to alert on.
 <br>
-It relies on the batch `time` already stored in `desc.json`; there is no separate alert-state file created by the Python scripts in this repository.
+It relies on the batch `time` already stored in `desc.json`. The OpenClaw prompt does not use `alerts_state.json`; that file is for the direct Python-to-Telegram alert path.
+
+If you want to use OpenClaw for higher-value work only, point it at the small generated files instead of the raw feed:
+
+- `borderline_matches.json` for borderline-fit review.
+- `application_briefs.json` for resume tailoring, “why this fits” refinement, and message drafting.
+
+That keeps AI usage focused on a small number of high-value jobs instead of spending credits on every feed poll.
 
 ### 8. Enjoy! 🙂
 
