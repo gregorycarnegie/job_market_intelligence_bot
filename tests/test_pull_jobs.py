@@ -1,3 +1,4 @@
+import csv
 import json
 import os
 import tempfile
@@ -296,6 +297,120 @@ class PullJobsTestCase(unittest.TestCase):
         self.assertEqual(items[0]["title"], "IT Support Engineer")
         self.assertIn("Example Co", items[0]["description"])
         self.assertEqual(items[0]["link"], "https://example.com/careers/it-support-engineer")
+
+    def test_main_end_to_end_writes_expected_runtime_files(self) -> None:
+        self.write_search_config(
+            {
+                "priority_companies": ["Monzo"],
+                "daily_digest": {"enabled": False},
+                "feedback": {"enabled": False},
+            }
+        )
+        feed_xml = """
+        <rss><channel>
+          <item>
+            <title>IT Support Engineer at Monzo</title>
+            <description>
+              London hybrid support role with Active Directory, Azure AD, Microsoft 365,
+              onboarding, troubleshooting, and hardware support.
+            </description>
+            <link>https://example.com/jobs/monzo-it-support</link>
+          </item>
+        </channel></rss>
+        """
+        test_feeds = [
+            {
+                "name": "test_feed",
+                "url": "https://example.com/feed.xml",
+                "min_interval_seconds": 0,
+            }
+        ]
+
+        with (
+            mock.patch.object(pull_jobs, "FEEDS", test_feeds),
+            mock.patch.object(pull_jobs, "fetch_feed", return_value=feed_xml),
+            mock.patch("jobbot.matching.load_telegram_settings", return_value=("", "", "")),
+        ):
+            result = pull_jobs.main()
+
+        self.assertEqual(result, 0)
+
+        with open("jobs.csv", encoding="utf-8", newline="") as handle:
+            rows = list(csv.DictReader(handle))
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["title"], "IT Support Engineer at Monzo")
+
+        matches = json.loads(Path("matches.json").read_text(encoding="utf-8"))
+        self.assertEqual(matches["match_count"], 1)
+        self.assertEqual(matches["matches"][0]["company"], "Monzo")
+        self.assertTrue(matches["matches"][0]["application_ready"])
+
+        alert_state = json.loads(Path("alerts_state.json").read_text(encoding="utf-8"))
+        self.assertEqual(len(alert_state["pending_alerts"]), 1)
+        self.assertIn("Telegram credentials not configured", alert_state["last_delivery_error"])
+
+        seen_state = json.loads(Path("seen_jobs_state.json").read_text(encoding="utf-8"))
+        self.assertTrue(seen_state["reviewed_fingerprints"])
+        self.assertTrue(seen_state["last_run_utc"])
+
+        applications_state = json.loads(Path("applications.json").read_text(encoding="utf-8"))
+        self.assertEqual(len(applications_state["applications"]), 1)
+        self.assertEqual(applications_state["applications"][0]["company"], "Monzo")
+        self.assertEqual(applications_state["applications"][0]["status"], "new")
+
+        feed_state = json.loads(Path("feed_state.json").read_text(encoding="utf-8"))
+        self.assertIn("test_feed", feed_state)
+        self.assertIn("last_checked_at", feed_state["test_feed"])
+
+        digest = json.loads(Path("daily_digest.json").read_text(encoding="utf-8"))
+        self.assertEqual(digest["item_count"], 1)
+
+        briefs = json.loads(Path("application_briefs.json").read_text(encoding="utf-8"))
+        self.assertEqual(briefs["brief_count"], 1)
+        self.assertEqual(briefs["items"][0]["company"], "Monzo")
+
+        borderline = json.loads(Path("borderline_matches.json").read_text(encoding="utf-8"))
+        self.assertEqual(borderline["candidate_count"], 0)
+
+        feedback_metrics = json.loads(Path("feedback_metrics.json").read_text(encoding="utf-8"))
+        self.assertTrue(feedback_metrics["feedback_enabled"] is False)
+        self.assertEqual(feedback_metrics["status_counts"]["new"], 1)
+        self.assertEqual(feedback_metrics["outcome_sample_count"], 0)
+
+    def test_main_does_not_mark_feed_checked_when_fetch_fails(self) -> None:
+        self.write_search_config(
+            {
+                "daily_digest": {"enabled": False},
+                "feedback": {"enabled": False},
+            }
+        )
+        test_feeds = [
+            {
+                "name": "failing_feed",
+                "url": "https://example.com/feed.xml",
+                "min_interval_seconds": 0,
+            }
+        ]
+
+        with (
+            mock.patch.object(pull_jobs, "FEEDS", test_feeds),
+            mock.patch.object(pull_jobs, "fetch_feed", side_effect=OSError("boom")),
+            mock.patch("jobbot.matching.load_telegram_settings", return_value=("", "", "")),
+        ):
+            result = pull_jobs.main()
+
+        self.assertEqual(result, 0)
+        feed_state = json.loads(Path("feed_state.json").read_text(encoding="utf-8"))
+        self.assertEqual(feed_state, {})
+
+        matches = json.loads(Path("matches.json").read_text(encoding="utf-8"))
+        self.assertEqual(matches["match_count"], 0)
+
+        applications_state = json.loads(Path("applications.json").read_text(encoding="utf-8"))
+        self.assertEqual(applications_state["applications"], [])
+
+        alert_state = json.loads(Path("alerts_state.json").read_text(encoding="utf-8"))
+        self.assertEqual(alert_state["pending_alerts"], [])
 
 
 if __name__ == "__main__":

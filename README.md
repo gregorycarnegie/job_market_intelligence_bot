@@ -17,7 +17,10 @@ This repository contains several files, part of the job market intelligence mech
 - `resume.json`: stores skills, preferences, and experience information that the Python scripts and OpenClaw rely on.
   OpenClaw will read the entire file once, while `pull_jobs.py` will pull special fields from this file in every execution (once every 60 seconds).
   OpenClaw will use AI credits to read the file and store it in memory, Python file will not use AI credits as it runs on the system level with Bash.
-- `pull_jobs.py`: fetches listings from several RSS jobs feeds (meant for computer reading), scores them against `resume.json`, stores matched listings in `jobs.csv`, writes the latest scored batch to `matches.json`, keeps delivery state in `alerts_state.json`, and can send Telegram alerts directly without OpenClaw.
+- `pull_jobs.py`: thin entrypoint/orchestrator for the job bot. It wires together feed polling, scoring, state updates, snapshots, and direct Telegram delivery.
+- `jobbot/common.py`: shared constants, text helpers, resume/config loading, and JSON/CSV state helpers.
+- `jobbot/sources.py`: feed and careers-page ingestion for RSS, Greenhouse, Lever, Ashby, Workable, and generic HTML careers pages.
+- `jobbot/matching.py`: scoring, application tracking, alerts, daily digest generation, and feedback learning.
 - `pull_desc.py`: fetches listings **only** from the most recent timestamp of `jobs.csv`, stores them in `desc.json` (a file that's being generated in the first run, and **replaced continuously** - always storing **the most recent listings** and disposing of the rest). `desc.json` is the only file that OpenClaw is exposed to.
 - `exec_loop.sh`: a bash script that runs both Python files, one after the other, every 60 seconds. Meant to run with Nohup on the system level of the VPS (see instructions below).
 - `.env.example`: a template for optional direct Telegram delivery using `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID`.
@@ -234,7 +237,7 @@ The feedback layer is also generated in Python:
 
 ### 6.8 Run the Unit Tests
 
-The repo now includes a stdlib `unittest` suite covering the most regression-prone logic in `pull_jobs.py` and `pull_desc.py`.
+The repo now includes a stdlib `unittest` suite covering the most regression-prone logic in the `jobbot` package and `pull_desc.py`.
 
 Run the full suite from the repo root:
 
@@ -248,8 +251,17 @@ What is covered right now:
 - blacklist / shortlist behavior
 - application-state upserts and dedupe
 - feedback learning and stale-record pruning
+- end-to-end `pull_jobs.main()` orchestration with temp runtime files
+- failed-feed handling that leaves `feed_state.json` unchanged
 - generic HTML careers-page parsing
 - latest-batch staging in `pull_desc.py`
+
+The current code layout is intentionally split so that:
+
+- `pull_jobs.py` stays small and readable as the runtime entrypoint
+- source-specific parsing changes live in `jobbot/sources.py`
+- scoring and application-ops changes live in `jobbot/matching.py`
+- shared state/config/text helpers live in `jobbot/common.py`
 
 ### 7. Manually Set Up Cron Jobs in OpenClaw UI ⏰
 
