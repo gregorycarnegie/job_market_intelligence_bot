@@ -1,8 +1,10 @@
-import csv
 import json
 import os
 import tempfile
 from pathlib import Path
+
+from jobbot import storage
+from jobbot.common import STATE_DB_FILE
 
 CSV_FILE = "jobs.csv"
 JSON_FILE = "desc.json"
@@ -23,41 +25,13 @@ def atomic_write_json(payload: list[dict[str, str]]) -> None:
 
 
 def load_latest_csv_batch() -> tuple[str | None, list[dict[str, str]]]:
-    csv_path = Path(CSV_FILE)
-    if not csv_path.exists():
-        return None, []
+    latest_ts, latest_batch = storage.load_latest_job_batch(STATE_DB_FILE)
+    if latest_ts or not Path(CSV_FILE).exists():
+        return latest_ts, latest_batch
 
-    latest_ts = None
-    latest_csv_batch = []
-
-    with open(csv_path, encoding="utf-8", newline="") as f:
-        reader = csv.DictReader(f)
-        for row in reader:
-            if not row:
-                continue
-            row_time = row.get("time")
-            if not row_time:
-                continue
-
-            link_parts = [row.get("link", "")]
-            if row.get(None):
-                link_parts.extend(row[None])
-            link = ",".join(part for part in link_parts if part)
-
-            if latest_ts != row_time:
-                latest_ts = row_time
-                latest_csv_batch = []
-
-            latest_csv_batch.append(
-                {
-                    "time": row_time,
-                    "title": row.get("title", ""),
-                    "description": row.get("description", ""),
-                    "link": link,
-                }
-            )
-
-    return latest_ts, latest_csv_batch
+    storage.import_jobs_from_csv(STATE_DB_FILE, CSV_FILE)
+    storage.export_jobs_to_csv(STATE_DB_FILE, CSV_FILE)
+    return storage.load_latest_job_batch(STATE_DB_FILE)
 
 
 def load_json_timestamp() -> str | None:

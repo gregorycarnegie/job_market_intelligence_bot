@@ -7,7 +7,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
+from jobbot import storage
+
 CSV_HEADERS = ["time", "title", "description", "link"]
+STATE_DB_FILE = "jobbot_state.sqlite3"
 FETCH_TIMEOUT_SECONDS = 20
 USER_AGENT = (
     "Mozilla/5.0 (X11; Linux x86_64) "
@@ -752,7 +755,7 @@ def atomic_write_json(path: Path, payload: object) -> None:
     temp_path.replace(path)
 
 
-def load_feed_state(feed_state_file: str) -> dict[str, dict[str, float]]:
+def _load_legacy_feed_state(feed_state_file: str) -> dict[str, dict[str, float]]:
     state_path = Path(feed_state_file)
     if not state_path.exists():
         return {}
@@ -764,7 +767,19 @@ def load_feed_state(feed_state_file: str) -> dict[str, dict[str, float]]:
     return data if isinstance(data, dict) else {}
 
 
+def load_feed_state(feed_state_file: str) -> dict[str, dict[str, float]]:
+    feed_state = storage.load_feed_state(STATE_DB_FILE)
+    if feed_state:
+        return feed_state
+
+    legacy_state = _load_legacy_feed_state(feed_state_file)
+    if legacy_state:
+        storage.save_feed_state(STATE_DB_FILE, legacy_state)
+    return legacy_state
+
+
 def save_feed_state(feed_state_file: str, feed_state: dict[str, dict[str, float]]) -> None:
+    storage.save_feed_state(STATE_DB_FILE, feed_state)
     atomic_write_json(Path(feed_state_file), feed_state)
 
 
@@ -784,12 +799,9 @@ def extract_csv_link(row: dict[str, object]) -> str:
     return ",".join(part for part in link_parts if part)
 
 
-def load_existing_jobs(csv_file: str) -> list[dict[str, str]]:
+def _load_legacy_existing_jobs(csv_file: str) -> list[dict[str, str]]:
     csv_path = Path(csv_file)
     if not csv_path.exists():
-        with open(csv_path, "w", encoding="utf-8", newline="") as f:
-            writer = csv.DictWriter(f, fieldnames=CSV_HEADERS)
-            writer.writeheader()
         return []
 
     jobs = []
@@ -811,15 +823,30 @@ def load_existing_jobs(csv_file: str) -> list[dict[str, str]]:
     return jobs
 
 
+def load_existing_jobs(csv_file: str) -> list[dict[str, str]]:
+    jobs = storage.load_jobs(STATE_DB_FILE)
+    if jobs:
+        storage.export_jobs_to_csv(STATE_DB_FILE, csv_file)
+        return jobs
+
+    legacy_jobs = _load_legacy_existing_jobs(csv_file)
+    if legacy_jobs:
+        storage.append_jobs(STATE_DB_FILE, legacy_jobs)
+        storage.export_jobs_to_csv(STATE_DB_FILE, csv_file)
+        return storage.load_jobs(STATE_DB_FILE)
+
+    storage.export_jobs_to_csv(STATE_DB_FILE, csv_file)
+    return []
+
+
 def append_rows(csv_file: str, rows: list[dict[str, str]]) -> None:
     if not rows:
         return
-    with open(csv_file, "a", encoding="utf-8", newline="") as f:
-        writer = csv.DictWriter(f, fieldnames=CSV_HEADERS)
-        writer.writerows(rows)
+    storage.append_jobs(STATE_DB_FILE, rows)
+    storage.export_jobs_to_csv(STATE_DB_FILE, csv_file)
 
 
-def load_seen_jobs_state(seen_jobs_state_file: str) -> dict[str, object]:
+def _load_legacy_seen_jobs_state(seen_jobs_state_file: str) -> dict[str, object]:
     state_path = Path(seen_jobs_state_file)
     if not state_path.exists():
         return fresh_seen_jobs_state()
@@ -845,7 +872,30 @@ def load_seen_jobs_state(seen_jobs_state_file: str) -> dict[str, object]:
     }
 
 
+def load_seen_jobs_state(seen_jobs_state_file: str) -> dict[str, object]:
+    state = storage.load_seen_jobs_state(STATE_DB_FILE)
+    if state != fresh_seen_jobs_state():
+        state["reviewed_fingerprints"] = dedupe_preserving_order(
+            [clean_text(str(fingerprint)) for fingerprint in state["reviewed_fingerprints"] if clean_text(str(fingerprint))]
+        )[-MAX_REVIEWED_FINGERPRINTS:]
+        return state
+
+    legacy_state = _load_legacy_seen_jobs_state(seen_jobs_state_file)
+    if legacy_state != fresh_seen_jobs_state():
+        storage.save_seen_jobs_state(STATE_DB_FILE, legacy_state)
+    return legacy_state
+
+
+def ensure_seen_jobs_storage(seen_jobs_state_file: str) -> None:
+    if storage.reviewed_fingerprint_count(STATE_DB_FILE) > 0:
+        return
+    legacy_state = _load_legacy_seen_jobs_state(seen_jobs_state_file)
+    if legacy_state != fresh_seen_jobs_state():
+        storage.save_seen_jobs_state(STATE_DB_FILE, legacy_state)
+
+
 def save_seen_jobs_state(seen_jobs_state_file: str, seen_jobs_state: dict[str, object]) -> None:
+    storage.save_seen_jobs_state(STATE_DB_FILE, seen_jobs_state)
     atomic_write_json(Path(seen_jobs_state_file), seen_jobs_state)
 
 
@@ -896,7 +946,7 @@ def normalize_pending_alert(payload: dict[str, object]) -> dict[str, object] | N
     }
 
 
-def load_alert_state(alerts_state_file: str) -> dict[str, object]:
+def _load_legacy_alert_state(alerts_state_file: str) -> dict[str, object]:
     state_path = Path(alerts_state_file)
     if not state_path.exists():
         return fresh_alert_state()
@@ -936,7 +986,42 @@ def load_alert_state(alerts_state_file: str) -> dict[str, object]:
     }
 
 
+def load_alert_state(alerts_state_file: str) -> dict[str, object]:
+    state = storage.load_alert_state(STATE_DB_FILE)
+    if state != fresh_alert_state():
+        pending_alerts = []
+        seen_pending_links = set()
+        for payload in state.get("pending_alerts", []):
+            if not isinstance(payload, dict):
+                continue
+            normalized = normalize_pending_alert(payload)
+            if normalized is None or normalized["link"] in seen_pending_links:
+                continue
+            pending_alerts.append(normalized)
+            seen_pending_links.add(normalized["link"])
+
+        alerted_links = [
+            clean_text(str(link))
+            for link in state.get("alerted_links", [])
+            if clean_text(str(link))
+        ]
+
+        return {
+            "alerted_links": dedupe_preserving_order(alerted_links)[-MAX_ALERTED_LINKS:],
+            "pending_alerts": pending_alerts,
+            "last_run_utc": clean_text(str(state.get("last_run_utc", ""))),
+            "last_delivery_utc": clean_text(str(state.get("last_delivery_utc", ""))),
+            "last_delivery_error": clean_text(str(state.get("last_delivery_error", ""))),
+        }
+
+    legacy_state = _load_legacy_alert_state(alerts_state_file)
+    if legacy_state != fresh_alert_state():
+        storage.save_alert_state(STATE_DB_FILE, legacy_state)
+    return legacy_state
+
+
 def save_alert_state(alerts_state_file: str, alert_state: dict[str, object]) -> None:
+    storage.save_alert_state(STATE_DB_FILE, alert_state)
     atomic_write_json(Path(alerts_state_file), alert_state)
 
 

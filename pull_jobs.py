@@ -6,6 +6,7 @@ from xml.etree import ElementTree
 
 import jobbot.common as common
 import jobbot.matching as matching
+import jobbot.storage as storage
 import jobbot.sources as source_module
 
 CSV_FILE = "jobs.csv"
@@ -21,6 +22,7 @@ DAILY_DIGEST_FILE = "daily_digest.json"
 APPLICATION_BRIEFS_FILE = "application_briefs.json"
 BORDERLINE_MATCHES_FILE = "borderline_matches.json"
 FEEDBACK_METRICS_FILE = "feedback_metrics.json"
+STATE_DB_FILE = common.STATE_DB_FILE
 
 CSV_HEADERS = common.CSV_HEADERS
 FETCH_TIMEOUT_SECONDS = common.FETCH_TIMEOUT_SECONDS
@@ -98,6 +100,7 @@ get_source_display_name = common.get_source_display_name
 extract_csv_link = common.extract_csv_link
 record_reviewed_fingerprints = common.record_reviewed_fingerprints
 prune_reviewed_fingerprints = common.prune_reviewed_fingerprints
+ensure_seen_jobs_storage = common.ensure_seen_jobs_storage
 normalize_pending_alert = common.normalize_pending_alert
 normalize_company_control = common.normalize_company_control
 stronger_company_control = common.stronger_company_control
@@ -176,6 +179,7 @@ compute_feedback_adjustment = matching.compute_feedback_adjustment
 build_feedback_metrics = matching.build_feedback_metrics
 find_application_record = matching.find_application_record
 upsert_application_record = matching.upsert_application_record
+upsert_application_record_in_storage = matching.upsert_application_record_in_storage
 seed_applications_from_existing_jobs = matching.seed_applications_from_existing_jobs
 rank_application_for_digest = matching.rank_application_for_digest
 build_daily_digest_snapshot = matching.build_daily_digest_snapshot
@@ -296,20 +300,20 @@ def main() -> int:
     existing_links = {job["link"] for job in existing_jobs}
     feed_state = load_feed_state()
     alert_state = load_alert_state()
-    seen_jobs_state = load_seen_jobs_state()
+    ensure_seen_jobs_storage(SEEN_JOBS_STATE_FILE)
     applications_state = load_applications_state()
     company_boards = load_company_boards()
-    reviewed_fingerprints = set(str(fingerprint) for fingerprint in seen_jobs_state["reviewed_fingerprints"])
     seeded_applications = seed_applications_from_existing_jobs(applications_state, existing_jobs)
     sync_application_outcomes(applications_state, current_run_ts)
     initial_cleanup_summary = prune_applications_state(applications_state, search_config, current_run_ts)
     feedback_profile = build_feedback_metrics(current_run_ts, applications_state, search_config, initial_cleanup_summary)
+    save_applications_state(applications_state)
 
     for job in existing_jobs:
-        record_reviewed_fingerprints(
-            seen_jobs_state,
-            reviewed_fingerprints,
+        storage.append_reviewed_fingerprints(
+            STATE_DB_FILE,
             build_review_fingerprints(job["title"], job["description"], job["link"]),
+            MAX_REVIEWED_FINGERPRINTS,
         )
 
     preferred_locations = profile["preferred_locations"]
@@ -336,13 +340,11 @@ def main() -> int:
             for item in items:
                 link = clean_text(item["link"])
                 fingerprints = build_review_fingerprints(item["title"], item["description"], link)
-                if not link or link in existing_links or any(
-                    fingerprint in reviewed_fingerprints for fingerprint in fingerprints
-                ):
+                if not link or link in existing_links or storage.has_any_reviewed_fingerprint(STATE_DB_FILE, fingerprints):
                     continue
 
                 evaluation = score_job(item, source_label, profile, search_config, feedback_profile, current_run_ts, lockouts)
-                record_reviewed_fingerprints(seen_jobs_state, reviewed_fingerprints, fingerprints)
+                storage.append_reviewed_fingerprints(STATE_DB_FILE, fingerprints, MAX_REVIEWED_FINGERPRINTS)
                 reviewed_count += 1
                 if not evaluation["qualified"]:
                     candidate = evaluation.get("candidate")
@@ -360,7 +362,7 @@ def main() -> int:
                     }
                 )
                 match_details.append(match)
-                if upsert_application_record(applications_state, match, current_run_ts):
+                if upsert_application_record_in_storage(match, current_run_ts):
                     applications_created += 1
                 existing_links.add(link)
                 new_hits += 1
@@ -375,9 +377,10 @@ def main() -> int:
 
     save_feed_state(feed_state)
     save_matches_snapshot(current_run_ts, match_details)
-    prune_reviewed_fingerprints(seen_jobs_state, reviewed_fingerprints)
+    seen_jobs_state = load_seen_jobs_state()
     seen_jobs_state["last_run_utc"] = current_run_ts
     save_seen_jobs_state(seen_jobs_state)
+    applications_state = load_applications_state()
     sync_application_outcomes(applications_state, current_run_ts)
     cleanup_summary = prune_applications_state(applications_state, search_config, current_run_ts)
     feedback_profile = build_feedback_metrics(current_run_ts, applications_state, search_config, cleanup_summary)

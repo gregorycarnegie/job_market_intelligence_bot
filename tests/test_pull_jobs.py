@@ -1,11 +1,13 @@
 import csv
 import json
 import os
+import sqlite3
 import tempfile
 import unittest
 from pathlib import Path
 from unittest import mock
 
+from jobbot import storage as jobbot_storage
 import pull_jobs
 
 
@@ -142,6 +144,57 @@ class PullJobsTestCase(unittest.TestCase):
         self.assertEqual(application["best_score"], 64)
         self.assertEqual(len(application["links"]), 2)
         self.assertGreaterEqual(application["match_count"], 2)
+        self.assertIn("hardware support", application["feedback_keywords"])
+
+    def test_sqlite_review_and_application_helpers(self) -> None:
+        jobbot_storage.append_reviewed_fingerprints(
+            pull_jobs.STATE_DB_FILE,
+            ["fingerprint-a", "fingerprint-b"],
+            pull_jobs.MAX_REVIEWED_FINGERPRINTS,
+        )
+        self.assertTrue(
+            jobbot_storage.has_any_reviewed_fingerprint(
+                pull_jobs.STATE_DB_FILE,
+                ["missing", "fingerprint-b"],
+            )
+        )
+        self.assertFalse(
+            jobbot_storage.has_any_reviewed_fingerprint(
+                pull_jobs.STATE_DB_FILE,
+                ["missing-only"],
+            )
+        )
+
+        first_payload = {
+            "title": "IT Support Engineer at Monzo",
+            "description": "London hybrid Active Directory and Microsoft 365 support role.",
+            "link": "https://example.com/jobs/monzo-it-support",
+            "source": "good_board",
+            "company": "Monzo",
+            "score": 58,
+            "best_score": 58,
+            "status": "new",
+            "fingerprints": ["monzo-it-support"],
+            "feedback_keywords": ["active directory", "microsoft 365"],
+        }
+        self.assertTrue(pull_jobs.upsert_application_record_in_storage(first_payload, "2026-04-04T10:00:00Z"))
+
+        second_payload = {
+            **first_payload,
+            "link": "https://boards.example.com/monzo/it-support",
+            "score": 64,
+            "best_score": 64,
+            "resume_bullet_suggestions": ["Supported Microsoft 365 and hardware incidents."],
+            "feedback_keywords": ["hardware support"],
+        }
+        self.assertFalse(pull_jobs.upsert_application_record_in_storage(second_payload, "2026-04-04T11:00:00Z"))
+
+        applications_state = pull_jobs.load_applications_state()
+        self.assertEqual(len(applications_state["applications"]), 1)
+        application = applications_state["applications"][0]
+        self.assertEqual(application["best_score"], 64)
+        self.assertIn("https://example.com/jobs/monzo-it-support", application["links"])
+        self.assertIn("https://boards.example.com/monzo/it-support", application["links"])
         self.assertIn("hardware support", application["feedback_keywords"])
 
     def test_feedback_metrics_and_scoring_adjustments(self) -> None:
@@ -376,6 +429,15 @@ class PullJobsTestCase(unittest.TestCase):
         self.assertTrue(feedback_metrics["feedback_enabled"] is False)
         self.assertEqual(feedback_metrics["status_counts"]["new"], 1)
         self.assertEqual(feedback_metrics["outcome_sample_count"], 0)
+
+        self.assertTrue(Path(pull_jobs.STATE_DB_FILE).exists())
+        with sqlite3.connect(pull_jobs.STATE_DB_FILE) as connection:
+            job_count = connection.execute("SELECT COUNT(*) FROM jobs").fetchone()[0]
+            application_count = connection.execute("SELECT COUNT(*) FROM applications").fetchone()[0]
+            feed_count = connection.execute("SELECT COUNT(*) FROM feed_state").fetchone()[0]
+        self.assertEqual(job_count, 1)
+        self.assertEqual(application_count, 1)
+        self.assertEqual(feed_count, 1)
 
     def test_main_does_not_mark_feed_checked_when_fetch_fails(self) -> None:
         self.write_search_config(

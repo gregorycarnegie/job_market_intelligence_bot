@@ -19,9 +19,10 @@ This repository contains several files, part of the job market intelligence mech
   OpenClaw will use AI credits to read the file and store it in memory, Python file will not use AI credits as it runs on the system level with Bash.
 - `pull_jobs.py`: thin entrypoint/orchestrator for the job bot. It wires together feed polling, scoring, state updates, snapshots, and direct Telegram delivery.
 - `jobbot/common.py`: shared constants, text helpers, resume/config loading, and JSON/CSV state helpers.
+- `jobbot_state.sqlite3`: primary runtime database for matched jobs, review history, alerts, applications, and feed polling state.
 - `jobbot/sources.py`: feed and careers-page ingestion for RSS, Greenhouse, Lever, Ashby, Workable, and generic HTML careers pages.
 - `jobbot/matching.py`: scoring, application tracking, alerts, daily digest generation, and feedback learning.
-- `pull_desc.py`: fetches listings **only** from the most recent timestamp of `jobs.csv`, stores them in `desc.json` (a file that's being generated in the first run, and **replaced continuously** - always storing **the most recent listings** and disposing of the rest). `desc.json` is the only file that OpenClaw is exposed to.
+- `pull_desc.py`: fetches listings **only** from the most recent matched batch in the runtime store, then stages them into `desc.json` (a file that's being generated in the first run, and **replaced continuously** - always storing **the most recent listings** and disposing of the rest). `desc.json` is the only file that OpenClaw is exposed to.
 - `exec_loop.sh`: a bash script that runs both Python files, one after the other, every 60 seconds. Meant to run with Nohup on the system level of the VPS (see instructions below).
 - `.env.example`: a template for optional direct Telegram delivery using `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID`.
 - `company_boards.json.example`: optional company-board config for Greenhouse, Lever, Ashby, and Workable sources.
@@ -170,6 +171,7 @@ cp .env.example .env
 
 Generated runtime files:
 
+- `jobbot_state.sqlite3` stores the operational runtime state. The JSON and CSV files below remain exported views and snapshots for inspection and compatibility.
 - `alerts_state.json` stores which links were already alerted and which alerts are still queued for retry.
 - `matches.json` stores the latest scored match batch with reasons and scores.
 - `seen_jobs_state.json` stores review fingerprints so already-seen non-matches and cross-source duplicates can be skipped.

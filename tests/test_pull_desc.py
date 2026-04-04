@@ -69,6 +69,33 @@ class PullDescTestCase(unittest.TestCase):
         payload = json.loads(Path("desc.json").read_text(encoding="utf-8"))
         self.assertEqual(payload, [])
 
+    def test_load_latest_csv_batch_uses_sqlite_after_import(self) -> None:
+        self.write_csv(
+            [
+                {
+                    "time": "2026-04-04T09:00:00Z",
+                    "title": "Old role",
+                    "description": "Old description",
+                    "link": "https://example.com/old",
+                },
+                {
+                    "time": "2026-04-04T10:00:00Z",
+                    "title": "New role",
+                    "description": "New description",
+                    "link": "https://example.com/new",
+                },
+            ]
+        )
+
+        latest_ts, batch = pull_desc.load_latest_csv_batch()
+        self.assertEqual(latest_ts, "2026-04-04T10:00:00Z")
+        Path("jobs.csv").unlink()
+
+        latest_ts, batch = pull_desc.load_latest_csv_batch()
+        self.assertEqual(latest_ts, "2026-04-04T10:00:00Z")
+        self.assertEqual(len(batch), 1)
+        self.assertEqual(batch[0]["title"], "New role")
+
 
 if __name__ == "__main__":
     unittest.main()

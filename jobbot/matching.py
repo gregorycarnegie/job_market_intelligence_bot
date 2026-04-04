@@ -7,6 +7,7 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
+from jobbot import storage
 from jobbot.common import (
     APPLICATION_READY_SCORE,
     APPLICATION_STATUSES,
@@ -22,6 +23,7 @@ from jobbot.common import (
     OUTCOME_RELEVANT_STATUSES,
     POSITIVE_TITLE_WEIGHTS,
     SENIORITY_PENALTIES,
+    STATE_DB_FILE,
     USER_AGENT,
     append_reason,
     atomic_write_json,
@@ -153,7 +155,7 @@ def normalize_application_record(payload: dict[str, object]) -> dict[str, object
     }
 
 
-def load_applications_state(applications_file: str) -> dict[str, object]:
+def _load_legacy_applications_state(applications_file: str) -> dict[str, object]:
     state_path = Path(applications_file)
     if not state_path.exists():
         from jobbot.common import fresh_applications_state
@@ -198,7 +200,44 @@ def load_applications_state(applications_file: str) -> dict[str, object]:
     }
 
 
+def load_applications_state(applications_file: str) -> dict[str, object]:
+    from jobbot.common import fresh_applications_state
+
+    data = storage.load_applications_state(STATE_DB_FILE)
+    applications = []
+    seen_keys = set()
+    for payload in data.get("applications", []):
+        if not isinstance(payload, dict):
+            continue
+        normalized = normalize_application_record(payload)
+        if normalized is None:
+            continue
+        dedupe_key = normalized["link"]
+        if dedupe_key in seen_keys:
+            continue
+        applications.append(normalized)
+        seen_keys.add(dedupe_key)
+
+    state = {
+        "applications": applications[-MAX_APPLICATION_RECORDS:],
+        "last_updated_utc": clean_text(str(data.get("last_updated_utc", ""))),
+        "last_digest_utc": clean_text(str(data.get("last_digest_utc", ""))),
+        "last_digest_date_utc": clean_text(str(data.get("last_digest_date_utc", ""))),
+        "last_digest_error": clean_text(str(data.get("last_digest_error", ""))),
+        "last_feedback_utc": clean_text(str(data.get("last_feedback_utc", ""))),
+        "last_cleanup_utc": clean_text(str(data.get("last_cleanup_utc", ""))),
+    }
+    if state != fresh_applications_state():
+        return state
+
+    legacy_state = _load_legacy_applications_state(applications_file)
+    if legacy_state != fresh_applications_state():
+        storage.save_applications_state(STATE_DB_FILE, legacy_state)
+    return legacy_state
+
+
 def save_applications_state(applications_file: str, applications_state: dict[str, object]) -> None:
+    storage.save_applications_state(STATE_DB_FILE, applications_state)
     atomic_write_json(Path(applications_file), applications_state)
 
 
@@ -1032,6 +1071,59 @@ def save_feedback_metrics_snapshot(feedback_metrics_file: str, snapshot: dict[st
     atomic_write_json(Path(feedback_metrics_file), snapshot)
 
 
+def _merge_application_record(
+    existing: dict[str, object],
+    application: dict[str, object],
+    seen_at_utc: str,
+) -> None:
+    existing["title"] = application["title"] or existing["title"]
+    if application["description"] and len(application["description"]) >= len(str(existing.get("description", ""))):
+        existing["description"] = application["description"]
+    existing["company"] = application["company"] or existing["company"]
+    existing["link"] = application["link"] or existing["link"]
+    existing["links"] = dedupe_preserving_order(application["links"] + list(existing.get("links", [])))
+    existing["source"] = application["source"] or existing["source"]
+    existing["sources"] = dedupe_preserving_order(application["sources"] + list(existing.get("sources", [])))
+    existing["status"] = normalize_application_status(existing.get("status", application["status"]))
+    existing["shortlisted"] = bool(existing.get("shortlisted", False) or application["shortlisted"])
+    existing["company_control"] = stronger_company_control(
+        normalize_company_control(existing.get("company_control", "none")),
+        normalize_company_control(application["company_control"]),
+    )
+    if existing["shortlisted"]:
+        existing["company_control"] = "priority"
+    existing["role_profile"] = application["role_profile"] or clean_text(str(existing.get("role_profile", "")))
+    existing["score"] = max(safe_int(existing.get("score", 0), 0), application["score"])
+    existing["best_score"] = max(safe_int(existing.get("best_score", 0), 0), application["best_score"], existing["score"])
+    existing["reasons"] = dedupe_preserving_order(application["reasons"] + list(existing.get("reasons", [])))[:6]
+    existing["why_this_fits"] = dedupe_preserving_order(application["why_this_fits"] + list(existing.get("why_this_fits", [])))[:3]
+    existing["resume_bullet_suggestions"] = dedupe_preserving_order(
+        application["resume_bullet_suggestions"] + list(existing.get("resume_bullet_suggestions", []))
+    )[:3]
+    existing["intro_message"] = application["intro_message"] or clean_text(str(existing.get("intro_message", "")))
+    existing["application_ready"] = bool(parse_bool(existing.get("application_ready", False), False) or application["application_ready"])
+    existing["feedback_keywords"] = dedupe_preserving_order(
+        application["feedback_keywords"] + list(existing.get("feedback_keywords", []))
+    )[:8]
+    existing["status_observed_utc"] = clean_text(str(existing.get("status_observed_utc", ""))) or clean_text(
+        str(application.get("status_observed_utc", ""))
+    )
+    existing["applied_at_utc"] = clean_text(str(existing.get("applied_at_utc", ""))) or clean_text(
+        str(application.get("applied_at_utc", ""))
+    )
+    existing["interviewed_at_utc"] = clean_text(str(existing.get("interviewed_at_utc", ""))) or clean_text(
+        str(application.get("interviewed_at_utc", ""))
+    )
+    existing["rejected_at_utc"] = clean_text(str(existing.get("rejected_at_utc", ""))) or clean_text(
+        str(application.get("rejected_at_utc", ""))
+    )
+    existing["notes"] = clean_text(str(existing.get("notes", "")))
+    existing["first_seen_utc"] = clean_text(str(existing.get("first_seen_utc", ""))) or seen_at_utc
+    existing["last_seen_utc"] = seen_at_utc
+    existing["match_count"] = max(1, safe_int(existing.get("match_count", 1), 1) + 1)
+    existing["fingerprints"] = dedupe_preserving_order(list(existing.get("fingerprints", [])) + application["fingerprints"])
+
+
 def find_application_record(
     applications: list[dict[str, object]],
     fingerprints: list[str],
@@ -1067,44 +1159,37 @@ def upsert_application_record(
         applications_state["applications"].append(application)
         applications_state["applications"] = applications_state["applications"][-MAX_APPLICATION_RECORDS:]
         return True
-    existing["title"] = application["title"] or existing["title"]
-    if application["description"] and len(application["description"]) >= len(str(existing.get("description", ""))):
-        existing["description"] = application["description"]
-    existing["company"] = application["company"] or existing["company"]
-    existing["link"] = application["link"] or existing["link"]
-    existing["links"] = dedupe_preserving_order(application["links"] + list(existing.get("links", [])))
-    existing["source"] = application["source"] or existing["source"]
-    existing["sources"] = dedupe_preserving_order(application["sources"] + list(existing.get("sources", [])))
-    existing["status"] = normalize_application_status(existing.get("status", application["status"]))
-    existing["shortlisted"] = bool(existing.get("shortlisted", False) or application["shortlisted"])
-    existing["company_control"] = stronger_company_control(
-        normalize_company_control(existing.get("company_control", "none")),
-        normalize_company_control(application["company_control"]),
+    _merge_application_record(existing, application, seen_at_utc)
+    return False
+
+
+def upsert_application_record_in_storage(payload: dict[str, object], seen_at_utc: str) -> bool:
+    application = normalize_application_record(
+        {
+            **payload,
+            "first_seen_utc": clean_text(str(payload.get("first_seen_utc", ""))) or seen_at_utc,
+            "last_seen_utc": seen_at_utc,
+        }
     )
-    if existing["shortlisted"]:
-        existing["company_control"] = "priority"
-    existing["role_profile"] = application["role_profile"] or clean_text(str(existing.get("role_profile", "")))
-    existing["score"] = max(safe_int(existing.get("score", 0), 0), application["score"])
-    existing["best_score"] = max(safe_int(existing.get("best_score", 0), 0), application["best_score"], existing["score"])
-    existing["reasons"] = dedupe_preserving_order(application["reasons"] + list(existing.get("reasons", [])))[:6]
-    existing["why_this_fits"] = dedupe_preserving_order(application["why_this_fits"] + list(existing.get("why_this_fits", [])))[:3]
-    existing["resume_bullet_suggestions"] = dedupe_preserving_order(
-        application["resume_bullet_suggestions"] + list(existing.get("resume_bullet_suggestions", []))
-    )[:3]
-    existing["intro_message"] = application["intro_message"] or clean_text(str(existing.get("intro_message", "")))
-    existing["application_ready"] = bool(parse_bool(existing.get("application_ready", False), False) or application["application_ready"])
-    existing["feedback_keywords"] = dedupe_preserving_order(
-        application["feedback_keywords"] + list(existing.get("feedback_keywords", []))
-    )[:8]
-    existing["status_observed_utc"] = clean_text(str(existing.get("status_observed_utc", ""))) or clean_text(str(application.get("status_observed_utc", "")))
-    existing["applied_at_utc"] = clean_text(str(existing.get("applied_at_utc", ""))) or clean_text(str(application.get("applied_at_utc", "")))
-    existing["interviewed_at_utc"] = clean_text(str(existing.get("interviewed_at_utc", ""))) or clean_text(str(application.get("interviewed_at_utc", "")))
-    existing["rejected_at_utc"] = clean_text(str(existing.get("rejected_at_utc", ""))) or clean_text(str(application.get("rejected_at_utc", "")))
-    existing["notes"] = clean_text(str(existing.get("notes", "")))
-    existing["first_seen_utc"] = clean_text(str(existing.get("first_seen_utc", ""))) or seen_at_utc
-    existing["last_seen_utc"] = seen_at_utc
-    existing["match_count"] = max(1, safe_int(existing.get("match_count", 1), 1) + 1)
-    existing["fingerprints"] = dedupe_preserving_order(list(existing.get("fingerprints", [])) + application["fingerprints"])
+    if application is None:
+        return False
+
+    existing_link, existing = storage.find_application_by_link_or_fingerprints(
+        STATE_DB_FILE,
+        application["link"],
+        application["fingerprints"],
+    )
+    if existing is None:
+        storage.save_application_record(STATE_DB_FILE, application)
+        return True
+
+    normalized_existing = normalize_application_record(existing)
+    if normalized_existing is None:
+        storage.save_application_record(STATE_DB_FILE, application, previous_link=existing_link)
+        return True
+
+    _merge_application_record(normalized_existing, application, seen_at_utc)
+    storage.save_application_record(STATE_DB_FILE, normalized_existing, previous_link=existing_link)
     return False
 
 

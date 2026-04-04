@@ -1,1 +1,25 @@
-\__pycache__
+# Python cache
+__pycache__/
+*.py[cod]
+
+# Local environment
+.env
+.env.*
+!.env.example
+
+# Runtime database
+jobbot_state.sqlite3
+
+# Runtime artifacts
+alerts_state.json
+applications.json
+application_briefs.json
+borderline_matches.json
+daily_digest.json
+desc.json
+feed_state.json
+feedback_metrics.json
+jobs.csv
+matches.json
+output.log
+seen_jobs_state.json
