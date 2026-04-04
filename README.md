@@ -40,6 +40,7 @@ This repository contains several files, part of the job market intelligence mech
 - Basic familiarity with Linux terminal (no need to be an expert).
 - SSH access to your VPS (set up a root password in advance).
 - Python 3 installed on the server (automatic if you use the One Click Deploy image - instructions below).
+  Python 3.10 or newer is recommended.
 - <a href="https://git-scm.com/">Git</a> installed on local machine.
 
 ## 📚 Instructions
@@ -230,6 +231,25 @@ The feedback layer is also generated in Python:
 - `feedback_metrics.json` summarizes which sources and matched keywords are actually leading to interviews or rejections.
 - Those metrics are then folded back into scoring so the bot gradually prefers sources and themes that are working for you.
 - Old application records are pruned automatically based on the `feedback` retention settings in `job_search_config.json`.
+
+### 6.8 Run the Unit Tests
+
+The repo now includes a stdlib `unittest` suite covering the most regression-prone logic in `pull_jobs.py` and `pull_desc.py`.
+
+Run the full suite from the repo root:
+
+```bash
+python3 -m unittest discover -s tests -v
+```
+
+What is covered right now:
+
+- scoring and generated application materials
+- blacklist / shortlist behavior
+- application-state upserts and dedupe
+- feedback learning and stale-record pruning
+- generic HTML careers-page parsing
+- latest-batch staging in `pull_desc.py`
 
 ### 7. Manually Set Up Cron Jobs in OpenClaw UI ⏰
 
