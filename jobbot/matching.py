@@ -155,54 +155,7 @@ def normalize_application_record(payload: dict[str, object]) -> dict[str, object
     }
 
 
-def _load_legacy_applications_state(applications_file: str) -> dict[str, object]:
-    state_path = Path(applications_file)
-    if not state_path.exists():
-        from jobbot.common import fresh_applications_state
-
-        return fresh_applications_state()
-
-    try:
-        with open(state_path, encoding="utf-8") as f:
-            data = json.load(f)
-    except (json.JSONDecodeError, OSError):
-        from jobbot.common import fresh_applications_state
-
-        return fresh_applications_state()
-
-    if not isinstance(data, dict):
-        from jobbot.common import fresh_applications_state
-
-        return fresh_applications_state()
-
-    applications = []
-    seen_keys = set()
-    for payload in data.get("applications", []):
-        if not isinstance(payload, dict):
-            continue
-        normalized = normalize_application_record(payload)
-        if normalized is None:
-            continue
-        dedupe_key = normalized["link"]
-        if dedupe_key in seen_keys:
-            continue
-        applications.append(normalized)
-        seen_keys.add(dedupe_key)
-
-    return {
-        "applications": applications[-MAX_APPLICATION_RECORDS:],
-        "last_updated_utc": clean_text(str(data.get("last_updated_utc", ""))),
-        "last_digest_utc": clean_text(str(data.get("last_digest_utc", ""))),
-        "last_digest_date_utc": clean_text(str(data.get("last_digest_date_utc", ""))),
-        "last_digest_error": clean_text(str(data.get("last_digest_error", ""))),
-        "last_feedback_utc": clean_text(str(data.get("last_feedback_utc", ""))),
-        "last_cleanup_utc": clean_text(str(data.get("last_cleanup_utc", ""))),
-    }
-
-
 def load_applications_state(applications_file: str) -> dict[str, object]:
-    from jobbot.common import fresh_applications_state
-
     data = storage.load_applications_state(STATE_DB_FILE)
     applications = []
     seen_keys = set()
@@ -227,13 +180,7 @@ def load_applications_state(applications_file: str) -> dict[str, object]:
         "last_feedback_utc": clean_text(str(data.get("last_feedback_utc", ""))),
         "last_cleanup_utc": clean_text(str(data.get("last_cleanup_utc", ""))),
     }
-    if state != fresh_applications_state():
-        return state
-
-    legacy_state = _load_legacy_applications_state(applications_file)
-    if legacy_state != fresh_applications_state():
-        storage.save_applications_state(STATE_DB_FILE, legacy_state)
-    return legacy_state
+    return state
 
 
 def save_applications_state(applications_file: str, applications_state: dict[str, object]) -> None:

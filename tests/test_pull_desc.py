@@ -1,4 +1,3 @@
-import csv
 import json
 import os
 import tempfile
@@ -27,14 +26,12 @@ class PullDescTestCase(unittest.TestCase):
         pull_desc.CSV_FILE = self.original_csv_file
         pull_desc.JSON_FILE = self.original_json_file
 
-    def write_csv(self, rows: list[dict[str, str]]) -> None:
-        with open("jobs.csv", "w", encoding="utf-8", newline="") as handle:
-            writer = csv.DictWriter(handle, fieldnames=pull_desc.CSV_HEADERS)
-            writer.writeheader()
-            writer.writerows(rows)
+    def seed_jobs(self, rows: list[dict[str, str]]) -> None:
+        pull_desc.storage.append_jobs(pull_desc.STATE_DB_FILE, rows)
+        pull_desc.storage.export_jobs_to_csv(pull_desc.STATE_DB_FILE, pull_desc.CSV_FILE)
 
     def test_load_latest_csv_batch_returns_only_latest_timestamp(self) -> None:
-        self.write_csv(
+        self.seed_jobs(
             [
                 {
                     "time": "2026-04-04T09:00:00Z",
@@ -69,8 +66,8 @@ class PullDescTestCase(unittest.TestCase):
         payload = json.loads(Path("desc.json").read_text(encoding="utf-8"))
         self.assertEqual(payload, [])
 
-    def test_load_latest_csv_batch_uses_sqlite_after_import(self) -> None:
-        self.write_csv(
+    def test_load_latest_csv_batch_reads_from_sqlite(self) -> None:
+        self.seed_jobs(
             [
                 {
                     "time": "2026-04-04T09:00:00Z",
@@ -89,8 +86,7 @@ class PullDescTestCase(unittest.TestCase):
 
         latest_ts, batch = pull_desc.load_latest_csv_batch()
         self.assertEqual(latest_ts, "2026-04-04T10:00:00Z")
-        Path("jobs.csv").unlink()
-
+        Path("jobs.csv").write_text("time,title,description,link\n", encoding="utf-8")
         latest_ts, batch = pull_desc.load_latest_csv_batch()
         self.assertEqual(latest_ts, "2026-04-04T10:00:00Z")
         self.assertEqual(len(batch), 1)

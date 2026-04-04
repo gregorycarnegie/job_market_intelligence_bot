@@ -97,10 +97,6 @@ normalize_role_profiles = common.normalize_role_profiles
 atomic_write_json = common.atomic_write_json
 is_feed_due = common.is_feed_due
 get_source_display_name = common.get_source_display_name
-extract_csv_link = common.extract_csv_link
-record_reviewed_fingerprints = common.record_reviewed_fingerprints
-prune_reviewed_fingerprints = common.prune_reviewed_fingerprints
-ensure_seen_jobs_storage = common.ensure_seen_jobs_storage
 normalize_pending_alert = common.normalize_pending_alert
 normalize_company_control = common.normalize_company_control
 stronger_company_control = common.stronger_company_control
@@ -300,7 +296,6 @@ def main() -> int:
     existing_links = {job["link"] for job in existing_jobs}
     feed_state = load_feed_state()
     alert_state = load_alert_state()
-    ensure_seen_jobs_storage(SEEN_JOBS_STATE_FILE)
     applications_state = load_applications_state()
     company_boards = load_company_boards()
     seeded_applications = seed_applications_from_existing_jobs(applications_state, existing_jobs)

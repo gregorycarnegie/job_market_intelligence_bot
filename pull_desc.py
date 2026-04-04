@@ -25,12 +25,6 @@ def atomic_write_json(payload: list[dict[str, str]]) -> None:
 
 
 def load_latest_csv_batch() -> tuple[str | None, list[dict[str, str]]]:
-    latest_ts, latest_batch = storage.load_latest_job_batch(STATE_DB_FILE)
-    if latest_ts or not Path(CSV_FILE).exists():
-        return latest_ts, latest_batch
-
-    storage.import_jobs_from_csv(STATE_DB_FILE, CSV_FILE)
-    storage.export_jobs_to_csv(STATE_DB_FILE, CSV_FILE)
     return storage.load_latest_job_batch(STATE_DB_FILE)
 
 

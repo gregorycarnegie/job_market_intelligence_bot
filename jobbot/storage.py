@@ -150,44 +150,6 @@ def _index_application(connection: sqlite3.Connection, application: dict[str, ob
     )
 
 
-def _extract_csv_link(row: dict[str, object]) -> str:
-    link_parts = [str(row.get("link", ""))]
-    if row.get(None):
-        link_parts.extend(str(part) for part in row[None])
-    return ",".join(part for part in link_parts if part)
-
-
-def _load_jobs_from_csv(csv_file: str) -> list[dict[str, str]]:
-    csv_path = Path(csv_file)
-    if not csv_path.exists():
-        return []
-
-    jobs = []
-    with open(csv_path, encoding="utf-8", newline="") as handle:
-        reader = csv.DictReader(handle)
-        for row in reader:
-            if not row:
-                continue
-            link = _extract_csv_link(row)
-            if not link:
-                continue
-            jobs.append(
-                {
-                    "time": str(row.get("time", "")),
-                    "title": str(row.get("title", "")),
-                    "description": str(row.get("description", "")),
-                    "link": link,
-                }
-            )
-    return jobs
-
-
-def import_jobs_from_csv(db_file: str, csv_file: str) -> int:
-    rows = _load_jobs_from_csv(csv_file)
-    append_jobs(db_file, rows)
-    return len(rows)
-
-
 def load_jobs(db_file: str) -> list[dict[str, str]]:
     with _connect(db_file) as connection:
         rows = connection.execute(
