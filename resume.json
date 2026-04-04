@@ -1,0 +1,195 @@
+{
+  "personal_info": {
+    "name": "Gregory Carnegie",
+    "title": "IT Technician",
+    "location": {
+      "city": "London",
+      "country": "United Kingdom"
+    },
+    "target_roles": [
+      "IT Technician",
+      "IT Support Engineer",
+      "IT Support Analyst",
+      "Desktop Support Engineer",
+      "Service Desk Analyst",
+      "Systems Administrator"
+    ],
+    "preferences": {
+      "remote": false,
+      "hybrid": true,
+      "onsite": true,
+      "preferred_locations": [
+        "London",
+        "United Kingdom",
+        "City of London",
+        "Canary Wharf"
+      ],
+      "minimum_salary_gbp": 45000,
+      "relocation": false
+    }
+  },
+  "summary": "Experienced IT technician with more than four years in IT support across user support, identity and access management, hardware upgrades, and process improvement. Strong hands-on experience with Python, Excel automation, Azure AD / Microsoft Entra, Active Directory, Microsoft 365, and day-to-day Windows and Linux administration. Comfortable working directly with users, third-party suppliers, and internal stakeholders to solve operational problems and improve systems.",
+  "experience": [
+    {
+      "period": "Mar 2019 - Current",
+      "role": "IT Technician",
+      "organization": "Harris Westminster Sixth Form",
+      "highlights": [
+        "Support 600 to 700 users across hardware, Microsoft 365, access control, and third-party applications.",
+        "Manage onboarding, enrolment, and user access across Active Directory, Azure AD / Microsoft Entra, and related systems.",
+        "Administer SharePoint permissions and user access to maintain appropriate security controls.",
+        "Conduct hardware upgrades on PCs and servers to improve performance and reliability.",
+        "Built a Windows desktop application in Python to automate cropping student photos for ID badges.",
+        "Collaborate with third-party suppliers and maintain software and hardware inventory audits.",
+        "Supervised implementation of the SchoolsBuddy activity sign-up system.",
+        "Led migration of the visitor management system from Biostore to InVentry.",
+        "Oversaw Paxton access control integration with InVentry.",
+        "Created posters and manuals to help users connect devices to Wi-Fi and use digital signage."
+      ]
+    },
+    {
+      "period": "Jul 2018 - Dec 2018",
+      "role": "IT Support Engineer",
+      "organization": "Fidessa Group PLC",
+      "highlights": [
+        "Identified and escalated a security risk involving an SSD BitLocker encryption bug.",
+        "Managed departing user accounts to ensure secure offboarding.",
+        "Created email distribution groups and managed shared mailbox permissions in Exchange admin tools.",
+        "Supported mobile device setup for BYOD users with BlackBerry Work."
+      ]
+    },
+    {
+      "period": "Nov 2014 - Jul 2018",
+      "role": "Teaching Assistant",
+      "organization": "St Thomas More Catholic School",
+      "highlights": [
+        "Created a Microsoft Access database template for tracking student behaviour and printing report cards.",
+        "Built PowerPoint lesson libraries and differentiated worksheets for English, Maths, and Science classes.",
+        "Managed classroom behaviour and supported positive learning environments.",
+        "Produced video training materials to help staff use the reporting database effectively."
+      ]
+    },
+    {
+      "period": "Nov 2012 - Jan 2020",
+      "role": "IT Support / Tutor",
+      "organization": "Global Tutors and Coaches",
+      "highlights": [
+        "Created spreadsheets and macros in Google Sheets to support invoice management.",
+        "Tutored primary through A-level students in Maths, Further Maths, and Physics.",
+        "Set up OneDrive and built Excel templates for invoicing, payslips, and attendance tracking.",
+        "Edited and updated the company website and improved the business presence on Google Maps.",
+        "Handled customer communication in person, by phone, and by email."
+      ]
+    },
+    {
+      "period": "Sep 2011 - Nov 2012",
+      "role": "Administrator",
+      "organization": "Global Tutors and Coaches",
+      "highlights": [
+        "Created written communications for clients and internal administration.",
+        "Supported day-to-day business operations and record keeping."
+      ]
+    }
+  ],
+  "education": [
+    {
+      "period": "Sep 2008 - Jul 2011",
+      "institution": "The University of Nottingham",
+      "degree": "BSc (Hons) Physics",
+      "specialization": "Physics",
+      "result": "2:2"
+    },
+    {
+      "period": "Sep 2006 - Jul 2008",
+      "institution": "Sir George Monoux Sixth Form College",
+      "credential": "A-Levels",
+      "details": [
+        "Mathematics (A)",
+        "Further Mathematics (C)",
+        "Physics (C)"
+      ]
+    },
+    {
+      "period": "Sep 2001 - Jul 2006",
+      "institution": "The Lammas Secondary School",
+      "credential": "GCSEs",
+      "details": [
+        "9 GCSEs, grades A to C"
+      ]
+    }
+  ],
+  "technical_skills": {
+    "skills": [
+      "Python",
+      "Flask",
+      "C++",
+      "Active Directory",
+      "Azure AD",
+      "Microsoft Entra",
+      "Microsoft 365",
+      "SharePoint",
+      "Exchange Admin Center",
+      "Windows",
+      "Linux",
+      "Ubuntu",
+      "Fedora",
+      "PuTTY",
+      "SSH",
+      "VPS",
+      "PowerShell",
+      "CMD",
+      "Windows Terminal",
+      "Microsoft Excel",
+      "Pivot Tables",
+      "Power Query",
+      "XLOOKUP",
+      "Google Sheets",
+      "Macros",
+      "Microsoft Access",
+      "Ticket Management",
+      "Halo",
+      "SMC",
+      "Hardware Support",
+      "Access Control",
+      "BlackBerry Work",
+      "Biostore",
+      "InVentry",
+      "Paxton",
+      "Net2",
+      "SchoolsBuddy"
+    ],
+    "competencies": [
+      "IT support and troubleshooting",
+      "VIP support",
+      "User onboarding and offboarding",
+      "Identity and access management",
+      "Hardware upgrades and device support",
+      "Spreadsheet design and reporting",
+      "Automation and tooling",
+      "Documentation and user guidance",
+      "Vendor coordination",
+      "Training and stakeholder support"
+    ]
+  },
+  "languages": [
+    "English"
+  ],
+  "attributes": [
+    "analytical",
+    "organized",
+    "hardworking",
+    "team-oriented",
+    "punctual",
+    "continuous learner"
+  ],
+  "interests": [
+    "DIY PC building",
+    "Python programming",
+    "Bouldering",
+    "Powerlifting",
+    "Blender",
+    "3D art",
+    "Photogrammetry",
+    "3D modelling"
+  ]
+}

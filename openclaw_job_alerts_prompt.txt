@@ -1,0 +1,12 @@
+Every cron run:
+1. Reload `desc.json` and `resume.json` from disk immediately before analysis.
+2. If `desc.json` is empty, output exactly nothing.
+3. Treat the batch timestamp as the shared `time` value on the items in `desc.json`.
+4. Keep track, in this cron job's own memory between runs, of the latest batch timestamp you have already processed.
+5. If the current batch timestamp is not newer than the latest batch timestamp you have already processed, output exactly nothing.
+6. If the batch is new, review each item in `desc.json`. A listing is alertable only if it is a clear match for the candidate in `resume.json`.
+7. For each alertable listing, output exactly one line in this format:
+   Job Match: [job title] ([link])
+8. If there are zero alertable listings in the new batch, output exactly nothing.
+9. Never send summaries, explanations, diagnostics, counts, timestamps, state updates, or any "no matches" message.
+10. Your entire response must be either one or more `Job Match:` lines or an empty response.
