@@ -271,13 +271,15 @@ The current code layout is intentionally split so that:
 
 OpenClaw is now optional.
 <br>
-If you still want OpenClaw as a secondary relay or AI review layer, navigate to the "Cron Jobs" tab and set up a manual task named: "job_alerts" that runs every 5 minutes (or any other interval you’d like)
+If you still want OpenClaw as a secondary relay for `desc.json`, navigate to the "Cron Jobs" tab and set up a manual task named `job_alerts` that runs every 1 minute.
 <br>
 Use the prompt from `openclaw_job_alerts_prompt.txt` as the full task description.
 <br>
 This stricter prompt matters: if you use a vague description, OpenClaw may send status updates like "no new matches" instead of staying silent when there is nothing to alert on.
 <br>
 It relies on the batch `time` already stored in `desc.json`. The OpenClaw prompt does not use `alerts_state.json`; that file is for the direct Python-to-Telegram alert path.
+<br>
+`pull_desc.py` continuously replaces `desc.json` with only the latest matched batch, so slower cron intervals can miss intermediate batches.
 
 If you want to use OpenClaw for higher-value work only, point it at the small generated files instead of the raw feed:
 
