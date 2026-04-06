@@ -255,12 +255,16 @@ FEEDS = [
     },
     {
         "name": "remotive_software_dev",
-        "url": "https://remotive.com/remote-jobs/feed/software-development",
+        "type": "remotive",
+        "category": "software-dev",
+        "display_name": "Remotive",
         "min_interval_seconds": 3600,
     },
     {
         "name": "remotive_devops",
-        "url": "https://remotive.com/remote-jobs/feed/devops",
+        "type": "remotive",
+        "category": "devops-sysadmin",
+        "display_name": "Remotive",
         "min_interval_seconds": 3600,
     },
     {
@@ -319,6 +323,44 @@ FEEDS = [
             "&search_keywords=payments"
             "&search_region=uk"
         ),
+        "min_interval_seconds": 3600,
+    },
+    {
+        "name": "adzuna_it_london",
+        "type": "adzuna",
+        "country": "gb",
+        "what": "IT support systems administrator service desk",
+        "where": "London",
+        "display_name": "Adzuna",
+        "min_interval_seconds": 3600,
+    },
+    {
+        "name": "reed_it_london",
+        "type": "reed",
+        "keywords": "IT support systems administrator service desk",
+        "location": "London",
+        "display_name": "Reed",
+        "min_interval_seconds": 3600,
+    },
+    {
+        "name": "jooble_it_london",
+        "type": "jooble",
+        "keywords": "IT support systems administrator service desk",
+        "location": "London",
+        "display_name": "Jooble",
+        "min_interval_seconds": 3600,
+    },
+    {
+        "name": "themuse_it_data",
+        "type": "themuse",
+        "category": "IT & Data",
+        "display_name": "The Muse",
+        "min_interval_seconds": 3600,
+    },
+    {
+        "name": "arbeitnow_all",
+        "type": "arbeitnow",
+        "display_name": "Arbeitnow",
         "min_interval_seconds": 3600,
     },
 ]

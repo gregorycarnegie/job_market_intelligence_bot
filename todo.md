@@ -52,16 +52,9 @@
 
 ## Free Job API Sources
 
-- [ ] Add Reed.co.uk API ingestion (UK/London specialist, clean salary bands, direct apply URLs — register at reed.co.uk/developers).
-- [ ] Add Adzuna API ingestion (UK aggregator, salary trends, company data — register at developer.adzuna.com).
-- [ ] Add Jooble API ingestion (global aggregator with heavy ATS coverage — key via RapidAPI or jooble.org developer portal).
-- [ ] Add The Muse API ingestion (tech/modern companies, filter by category and level — themuse.com/developers/api/v2, no key needed up to 500 req/hr).
-- [ ] Add Arbeitnow API ingestion (tech-heavy, EU/remote, visa sponsorship flags — no API key needed, hit arbeitnow.com/api/job-board-api).
-- [ ] Switch Remotive source from RSS to JSON API (no key needed — remotive.com/api/remote-jobs?category=software-dev).
-
-## Free Job Sources (Non-API)
-
-- [ ] Add email inbox parsing via IMAP (dedicated Gmail account for job alerts from LinkedIn, Indeed, Otta — use imaplib + BeautifulSoup to extract jobs from alert emails).
-- [ ] Add Hacker News "Who is Hiring" ingestion (monthly thread on first weekday — parse via Hacker News Firebase API at hacker-news.firebaseio.com/v0/, filter for London/UK/hybrid keywords).
-- [ ] Add Discord job channel monitoring (join UK tech community servers, listen to #jobs channels via discord.py — requires permission from server admins).
-- [ ] Add Slack job channel monitoring (join Tech London Slack and similar, monitor #jobs/#careers channels via Slack API).
+- [x] Add Reed.co.uk API ingestion (UK/London specialist, clean salary bands, direct apply URLs — register at reed.co.uk/developers).
+- [x] Add Adzuna API ingestion (UK aggregator, salary trends, company data — register at developer.adzuna.com).
+- [x] Add Jooble API ingestion (global aggregator with heavy ATS coverage — key via RapidAPI or jooble.org developer portal up to 500 req/hr).
+- [x] Add The Muse API ingestion (tech/modern companies, filter by category and level — themuse.com/developers/api/v2, no key needed up to 500 req/hr).
+- [x] Add Arbeitnow API ingestion (tech-heavy, EU/remote, visa sponsorship flags — no API key needed, hit arbeitnow.com/api/job-board-api).
+- [x] Switch Remotive source from RSS to JSON API (no key needed — remotive.com/api/remote-jobs?category=software-dev).

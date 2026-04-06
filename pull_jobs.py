@@ -1,5 +1,7 @@
 import logging
+import os
 from datetime import datetime, timezone
+from pathlib import Path
 from time import time
 from urllib.error import HTTPError, URLError
 from xml.etree import ElementTree
@@ -8,6 +10,25 @@ import jobbot.common as common
 import jobbot.matching as matching
 import jobbot.sources as source_module
 import jobbot.storage as storage
+
+
+def _load_dotenv(path: str = ".env") -> None:
+    """Load key=value pairs from a .env file into os.environ (stdlib only)."""
+    env_path = Path(path)
+    if not env_path.is_file():
+        return
+    for line in env_path.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, _, value = line.partition("=")
+        key = key.strip()
+        value = value.strip().strip('"').strip("'")
+        if key and key not in os.environ:
+            os.environ[key] = value
+
+
+_load_dotenv()
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
@@ -226,9 +247,6 @@ def save_matches_snapshot(run_time_utc: str, matches: list[dict[str, object]]) -
 
 def load_company_boards() -> list[dict[str, object]]:
     return source_module.load_company_boards(COMPANY_BOARDS_FILE)
-
-
-
 
 
 def load_applications_state() -> dict[str, object]:

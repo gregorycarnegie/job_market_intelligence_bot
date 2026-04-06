@@ -1,10 +1,11 @@
+import base64
 import html
 import json
 import logging
 import os
 import re
 from pathlib import Path
-from urllib.parse import urljoin, urlsplit
+from urllib.parse import urljoin, urlencode, urlsplit
 from urllib.request import Request, urlopen
 from xml.etree import ElementTree
 
@@ -62,6 +63,22 @@ def fetch_json(url: str, headers: dict[str, str] | None = None) -> object:
         charset = response.headers.get_content_charset() or "utf-8"
         body = response.read().decode(charset, errors="replace")
     return json.loads(body)
+
+
+def fetch_json_post(url: str, body: dict[str, object], headers: dict[str, str] | None = None) -> object:
+    request_headers = {
+        "User-Agent": USER_AGENT,
+        "Accept": "application/json,text/plain;q=0.9,*/*;q=0.8",
+        "Content-Type": "application/json",
+    }
+    if headers:
+        request_headers.update(headers)
+    data = json.dumps(body).encode("utf-8")
+    request = Request(url, data=data, headers=request_headers)
+    with urlopen(request, timeout=FETCH_TIMEOUT_SECONDS) as response:
+        charset = response.headers.get_content_charset() or "utf-8"
+        raw = response.read().decode(charset, errors="replace")
+    return json.loads(raw)
 
 
 def strip_html_noise(html_text: str) -> str:
@@ -955,6 +972,361 @@ class WorkableSource(Source):
         return items
 
 
+class AdzunaSource(Source):
+    def fetch(self) -> list[JobLead]:
+        source = self.config
+        app_id = os.environ.get("ADZUNA_APP_ID", "").strip()
+        app_key = os.environ.get("ADZUNA_APP_KEY", "").strip()
+        if not app_id or not app_key:
+            raise ValueError("ADZUNA_APP_ID and ADZUNA_APP_KEY must be set in environment")
+
+        country = clean_text(str(source.get("country", "gb"))) or "gb"
+        what = clean_text(str(source.get("what", "")))
+        where = clean_text(str(source.get("where", "")))
+        display_name = str(source.get("display_name", "") or source.get("name", "Adzuna"))
+        results_per_page = 50
+        max_pages = 2
+
+        items = []
+        seen_links: set[str] = set()
+
+        for page in range(1, max_pages + 1):
+            params: dict[str, object] = {
+                "app_id": app_id,
+                "app_key": app_key,
+                "results_per_page": results_per_page,
+            }
+            if what:
+                params["what"] = what
+            if where:
+                params["where"] = where
+
+            url = f"https://api.adzuna.com/v1/api/jobs/{country}/search/{page}?{urlencode(params)}"
+            payload = fetch_json(url)
+            if not isinstance(payload, dict):
+                break
+            results = payload.get("results", [])
+            if not isinstance(results, list) or not results:
+                break
+
+            for job in results:
+                if not isinstance(job, dict):
+                    continue
+                link = clean_text(str(job.get("redirect_url", "")))
+                title = clean_text(str(job.get("title", "")))
+                if not link or not title or link in seen_links:
+                    continue
+                company_obj = job.get("company")
+                company = clean_text(str(company_obj.get("display_name", "") if isinstance(company_obj, dict) else ""))
+                location_obj = job.get("location")
+                location = clean_text(str(location_obj.get("display_name", "") if isinstance(location_obj, dict) else ""))
+                salary = format_provider_salary_text(
+                    job.get("salary_min"),
+                    job.get("salary_max"),
+                    "GBP" if country == "gb" else "USD",
+                    "year",
+                )
+                items.append(
+                    JobLead(
+                        title=title,
+                        link=link,
+                        source=display_name,
+                        company=company or display_name,
+                        location=location,
+                        salary=salary,
+                        description=join_text_parts(job.get("description", ""), company, location),
+                        employment_type=join_text_parts(
+                            str(job.get("contract_type", "")),
+                            str(job.get("contract_time", "")),
+                        ),
+                        date_posted=clean_text(str(job.get("created", ""))),
+                    )
+                )
+                seen_links.add(link)
+
+            if len(results) < results_per_page:
+                break
+
+        return items
+
+
+class ReedSource(Source):
+    def fetch(self) -> list[JobLead]:
+        source = self.config
+        api_key = os.environ.get("REED_APP_KEY", "").strip()
+        if not api_key:
+            raise ValueError("REED_APP_KEY must be set in environment")
+
+        credentials = base64.b64encode(f"{api_key}:".encode()).decode()
+        auth_header = {"Authorization": f"Basic {credentials}"}
+
+        keywords = clean_text(str(source.get("keywords", "")))
+        location = clean_text(str(source.get("location", "")))
+        display_name = str(source.get("display_name", "") or source.get("name", "Reed"))
+
+        params: dict[str, object] = {"resultsToTake": 100}
+        if keywords:
+            params["keywords"] = keywords
+        if location:
+            params["locationName"] = location
+
+        url = f"https://www.reed.co.uk/api/1.0/search?{urlencode(params)}"
+        payload = fetch_json(url, headers=auth_header)
+        jobs = payload.get("results", []) if isinstance(payload, dict) else []
+
+        items = []
+        seen_links: set[str] = set()
+
+        for job in jobs:
+            if not isinstance(job, dict):
+                continue
+            link = clean_text(str(job.get("jobUrl", "")))
+            title = clean_text(str(job.get("jobTitle", "")))
+            if not link or not title or link in seen_links:
+                continue
+            salary = format_provider_salary_text(
+                job.get("minimumSalary"),
+                job.get("maximumSalary"),
+                str(job.get("currency", "GBP")),
+                "year",
+            )
+            items.append(
+                JobLead(
+                    title=title,
+                    link=link,
+                    source=display_name,
+                    company=clean_text(str(job.get("employerName", ""))),
+                    location=clean_text(str(job.get("locationName", ""))),
+                    salary=salary,
+                    description=join_text_parts(
+                        job.get("jobDescription", ""),
+                        job.get("employerName", ""),
+                        job.get("locationName", ""),
+                    ),
+                    employment_type="",
+                    date_posted=clean_text(str(job.get("date", ""))),
+                )
+            )
+            seen_links.add(link)
+
+        return items
+
+
+class JoobleSource(Source):
+    def fetch(self) -> list[JobLead]:
+        source = self.config
+        api_key = os.environ.get("JOOBLE_APP_KEY", "").strip()
+        if not api_key:
+            raise ValueError("JOOBLE_APP_KEY must be set in environment")
+
+        keywords = clean_text(str(source.get("keywords", "")))
+        location = clean_text(str(source.get("location", "")))
+        display_name = str(source.get("display_name", "") or source.get("name", "Jooble"))
+
+        url = f"https://jooble.org/api/{api_key}"
+        payload = fetch_json_post(url, {"keywords": keywords, "location": location, "resultsOnPage": 20, "page": 1})
+        jobs = payload.get("jobs", []) if isinstance(payload, dict) else []
+
+        items = []
+        seen_links: set[str] = set()
+
+        for job in jobs:
+            if not isinstance(job, dict):
+                continue
+            link = clean_text(str(job.get("link", "")))
+            title = clean_text(str(job.get("title", "")))
+            if not link or not title or link in seen_links:
+                continue
+            items.append(
+                JobLead(
+                    title=title,
+                    link=link,
+                    source=display_name,
+                    company=clean_text(str(job.get("company", ""))),
+                    location=clean_text(str(job.get("location", ""))),
+                    salary=clean_text(str(job.get("salary", ""))),
+                    description=join_text_parts(
+                        job.get("snippet", ""),
+                        job.get("company", ""),
+                        job.get("location", ""),
+                    ),
+                    employment_type=clean_text(str(job.get("type", ""))),
+                    date_posted=clean_text(str(job.get("updated", ""))),
+                )
+            )
+            seen_links.add(link)
+
+        return items
+
+
+class TheMuseSource(Source):
+    def fetch(self) -> list[JobLead]:
+        source = self.config
+        category = clean_text(str(source.get("category", "IT & Data")))
+        display_name = str(source.get("display_name", "") or source.get("name", "The Muse"))
+        max_pages = 2
+
+        items = []
+        seen_links: set[str] = set()
+
+        for page in range(max_pages):
+            params: dict[str, object] = {"page": page, "category": category, "descending": "true"}
+            location = clean_text(str(source.get("location", "")))
+            if location:
+                params["location"] = location
+
+            url = f"https://www.themuse.com/api/public/jobs?{urlencode(params)}"
+            payload = fetch_json(url)
+            if not isinstance(payload, dict):
+                break
+            results = payload.get("results", [])
+            if not isinstance(results, list) or not results:
+                break
+
+            for job in results:
+                if not isinstance(job, dict):
+                    continue
+                refs = job.get("refs", {})
+                link = clean_text(str(refs.get("landing_page", "") if isinstance(refs, dict) else ""))
+                title = clean_text(str(job.get("name", "")))
+                if not link or not title or link in seen_links:
+                    continue
+
+                company_obj = job.get("company", {})
+                company = clean_text(str(company_obj.get("name", "") if isinstance(company_obj, dict) else ""))
+                locations = [
+                    clean_text(str(loc.get("name", "")))
+                    for loc in job.get("locations", [])
+                    if isinstance(loc, dict)
+                ]
+                levels = [
+                    clean_text(str(lvl.get("name", "")))
+                    for lvl in job.get("levels", [])
+                    if isinstance(lvl, dict)
+                ]
+
+                items.append(
+                    JobLead(
+                        title=title,
+                        link=link,
+                        source=display_name,
+                        company=company or display_name,
+                        location=", ".join(locations),
+                        salary="",
+                        description=join_text_parts(
+                            job.get("contents", ""),
+                            company,
+                            ", ".join(locations),
+                            ", ".join(levels),
+                        ),
+                        employment_type=", ".join(levels),
+                        date_posted=clean_text(str(job.get("publication_date", ""))),
+                    )
+                )
+                seen_links.add(link)
+
+        return items
+
+
+class ArbeitnowSource(Source):
+    def fetch(self) -> list[JobLead]:
+        source = self.config
+        display_name = str(source.get("display_name", "") or source.get("name", "Arbeitnow"))
+        max_pages = 3
+
+        items = []
+        seen_links: set[str] = set()
+
+        for page in range(1, max_pages + 1):
+            url = f"https://www.arbeitnow.com/api/job-board-api?page={page}"
+            payload = fetch_json(url)
+            if not isinstance(payload, dict):
+                break
+            jobs = payload.get("data", [])
+            if not isinstance(jobs, list) or not jobs:
+                break
+
+            for job in jobs:
+                if not isinstance(job, dict):
+                    continue
+                link = clean_text(str(job.get("url", "")))
+                title = clean_text(str(job.get("title", "")))
+                if not link or not title or link in seen_links:
+                    continue
+
+                tags = [clean_text(str(t)) for t in job.get("tags", []) if t]
+                job_types = [clean_text(str(t)) for t in job.get("job_types", []) if t]
+                extras = []
+                if job.get("remote"):
+                    extras.append("remote")
+                if job.get("visa_sponsorship"):
+                    extras.append("visa sponsorship")
+
+                items.append(
+                    JobLead(
+                        title=title,
+                        link=link,
+                        source=display_name,
+                        company=clean_text(str(job.get("company_name", ""))),
+                        location=clean_text(str(job.get("location", ""))),
+                        salary="",
+                        description=join_text_parts(
+                            job.get("description", ""),
+                            ", ".join(tags),
+                            ", ".join(extras),
+                        ),
+                        employment_type=", ".join(job_types),
+                        date_posted="",
+                    )
+                )
+                seen_links.add(link)
+
+        return items
+
+
+class RemotiveSource(Source):
+    def fetch(self) -> list[JobLead]:
+        source = self.config
+        category = clean_text(str(source.get("category", "software-dev")))
+        display_name = str(source.get("display_name", "") or source.get("name", "Remotive"))
+
+        url = f"https://remotive.com/api/remote-jobs?category={urlencode({'': category})[1:]}&limit=100"
+        payload = fetch_json(url)
+        jobs = payload.get("jobs", []) if isinstance(payload, dict) else []
+
+        items = []
+        seen_links: set[str] = set()
+
+        for job in jobs:
+            if not isinstance(job, dict):
+                continue
+            link = clean_text(str(job.get("url", "")))
+            title = clean_text(str(job.get("title", "")))
+            if not link or not title or link in seen_links:
+                continue
+            items.append(
+                JobLead(
+                    title=title,
+                    link=link,
+                    source=display_name,
+                    company=clean_text(str(job.get("company_name", ""))),
+                    location=clean_text(str(job.get("candidate_required_location", ""))),
+                    salary=clean_text(str(job.get("salary", ""))),
+                    description=join_text_parts(
+                        job.get("description", ""),
+                        job.get("company_name", ""),
+                        job.get("candidate_required_location", ""),
+                        job.get("tags", []) if isinstance(job.get("tags"), str) else ", ".join(job.get("tags", [])),
+                    ),
+                    employment_type=clean_text(str(job.get("job_type", ""))),
+                    date_posted=clean_text(str(job.get("publication_date", ""))),
+                )
+            )
+            seen_links.add(link)
+
+        return items
+
+
 def create_source(source_config: dict[str, object]) -> Source:
     platform = str(source_config.get("platform", ""))
     if platform == "greenhouse":
@@ -971,6 +1343,18 @@ def create_source(source_config: dict[str, object]) -> Source:
     source_type = str(source_config.get("type", ""))
     if source_type == "efc_html":
         return EfcHtmlSource(source_config)
+    if source_type == "adzuna":
+        return AdzunaSource(source_config)
+    if source_type == "reed":
+        return ReedSource(source_config)
+    if source_type == "jooble":
+        return JoobleSource(source_config)
+    if source_type == "themuse":
+        return TheMuseSource(source_config)
+    if source_type == "arbeitnow":
+        return ArbeitnowSource(source_config)
+    if source_type == "remotive":
+        return RemotiveSource(source_config)
 
     return RssSource(source_config)
 
