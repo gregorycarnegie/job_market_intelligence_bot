@@ -93,5 +93,64 @@ class PullDescTestCase(unittest.TestCase):
         self.assertEqual(batch[0]["title"], "New role")
 
 
+    def test_main_stages_batch_when_timestamps_differ(self) -> None:
+        self.seed_jobs(
+            [
+                {
+                    "time": "2026-04-04T10:00:00Z",
+                    "title": "New role",
+                    "description": "Desc",
+                    "link": "https://example.com/new",
+                },
+            ]
+        )
+        result = pull_desc.main()
+        self.assertEqual(result, 0)
+        payload = json.loads(Path("desc.json").read_text(encoding="utf-8"))
+        self.assertEqual(len(payload), 1)
+        self.assertEqual(payload[0]["title"], "New role")
+
+    def test_main_no_op_when_timestamps_match(self) -> None:
+        self.seed_jobs(
+            [
+                {
+                    "time": "2026-04-04T10:00:00Z",
+                    "title": "Existing role",
+                    "description": "Desc",
+                    "link": "https://example.com/existing",
+                },
+            ]
+        )
+        # First run stages the batch
+        pull_desc.main()
+        # Read back to confirm it was written
+        first_payload = json.loads(Path("desc.json").read_text(encoding="utf-8"))
+        self.assertEqual(len(first_payload), 1)
+        # Second run: timestamps match, no-op
+        result = pull_desc.main()
+        self.assertEqual(result, 0)
+        second_payload = json.loads(Path("desc.json").read_text(encoding="utf-8"))
+        self.assertEqual(first_payload, second_payload)
+
+    def test_load_json_timestamp_returns_none_for_missing_file(self) -> None:
+        self.assertIsNone(pull_desc.load_json_timestamp())
+
+    def test_load_json_timestamp_reads_time_from_valid_json(self) -> None:
+        Path("desc.json").write_text(
+            json.dumps([{"time": "2026-04-04T10:00:00Z", "title": "A", "description": "", "link": ""}]),
+            encoding="utf-8",
+        )
+        result = pull_desc.load_json_timestamp()
+        self.assertEqual(result, "2026-04-04T10:00:00Z")
+
+    def test_load_json_timestamp_returns_none_for_invalid_json(self) -> None:
+        Path("desc.json").write_text("not valid json {{", encoding="utf-8")
+        self.assertIsNone(pull_desc.load_json_timestamp())
+
+    def test_load_json_timestamp_returns_none_for_empty_array(self) -> None:
+        Path("desc.json").write_text("[]", encoding="utf-8")
+        self.assertIsNone(pull_desc.load_json_timestamp())
+
+
 if __name__ == "__main__":
     unittest.main()
