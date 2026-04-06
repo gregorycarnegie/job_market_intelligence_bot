@@ -292,6 +292,7 @@ def main() -> int:
     reviewed_count = 0
     applications_created = 0
 
+    common.fetch_live_currency_rates()
     profile = load_resume_profile()
     search_config = load_job_search_config()
     existing_jobs = load_existing_jobs()

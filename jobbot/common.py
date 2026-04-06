@@ -2,6 +2,7 @@ import html
 import json
 import re
 import sys
+import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
@@ -110,6 +111,28 @@ CURRENCY_TO_GBP = {
     "usd": 0.79,
     "eur": 0.86,
 }
+
+
+def fetch_live_currency_rates() -> None:
+    """Fetch live GBP exchange rates from Frankfurter (ECB data) and update CURRENCY_TO_GBP in-place.
+    Falls back silently to the hardcoded rates on any error."""
+    try:
+        req = urllib.request.Request(
+            "https://api.frankfurter.dev/v1/latest?from=GBP&to=USD,EUR",
+            headers={"User-Agent": USER_AGENT},
+        )
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            data = json.loads(resp.read())
+        rates = data.get("rates", {})
+        if "USD" in rates:
+            CURRENCY_TO_GBP["usd"] = round(1.0 / rates["USD"], 6)
+        if "EUR" in rates:
+            CURRENCY_TO_GBP["eur"] = round(1.0 / rates["EUR"], 6)
+        print(f"Rates: 1 GBP = {rates.get('USD', '?')} USD, {rates.get('EUR', '?')} EUR (date: {data.get('date', '?')})")
+    except Exception as exc:
+        print(f"Warning: could not fetch live currency rates, using defaults — {exc}", file=sys.stderr)
+
+
 CADENCE_TO_ANNUAL_MULTIPLIER = {
     "year": 1,
     "month": 12,
