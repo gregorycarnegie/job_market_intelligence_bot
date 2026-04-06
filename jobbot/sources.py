@@ -1,8 +1,8 @@
 import html
 import json
+import logging
 import os
 import re
-import sys
 from pathlib import Path
 from urllib.parse import urljoin, urlsplit
 from urllib.request import Request, urlopen
@@ -27,6 +27,8 @@ from jobbot.common import (
     strip_cdata,
     strip_tags,
 )
+
+logger = logging.getLogger(__name__)
 
 
 def fetch_feed(url: str) -> str:
@@ -324,9 +326,7 @@ def looks_like_generic_job_link(
         return True
 
     keywords = list(board["job_link_keywords"]) or list(DEFAULT_GENERIC_JOB_LINK_KEYWORDS)
-    if any(keyword in normalized_url or keyword in normalized_anchor for keyword in keywords):
-        return True
-    return False
+    return bool(any(keyword in normalized_url or keyword in normalized_anchor for keyword in keywords))
 
 
 def fallback_generic_job_item(html_text: str, url: str, display_name: str) -> dict[str, str] | None:
@@ -536,11 +536,7 @@ def parse_efinancialcareers_html(html_text: str, source: dict[str, str | int]) -
         slug = link.rsplit("/", 1)[-1]
         slug = re.sub(r"\.id\d+.*$", "", slug)
         slug = slug.replace("jobs-", "").replace("_", " ").replace("-", " ")
-        description = " ".join(
-            part
-            for part in [clean_text(slug), str(source.get("context_terms", ""))]
-            if part
-        )
+        description = " ".join(part for part in [clean_text(slug), str(source.get("context_terms", ""))] if part)
 
         items.append(
             {
@@ -560,7 +556,68 @@ def parse_source_items(source: dict[str, str | int], raw_text: str) -> list[dict
     return parse_feed_items(raw_text)
 
 
+def _normalize_greenhouse(raw_board: dict[str, object], normalized: dict[str, object]) -> None:
+    normalized["board_token"] = clean_text(str(raw_board.get("board_token", ""))).strip("/")
+
+
+def _normalize_lever(raw_board: dict[str, object], normalized: dict[str, object]) -> None:
+    normalized["site"] = clean_text(str(raw_board.get("site", ""))).strip("/")
+    normalized["instance"] = normalize_text(str(raw_board.get("instance", "global"))) or "global"
+
+
+def _normalize_ashby(raw_board: dict[str, object], normalized: dict[str, object]) -> None:
+    normalized["job_board_name"] = clean_text(str(raw_board.get("job_board_name", ""))).strip("/")
+
+
+def _normalize_workable(raw_board: dict[str, object], normalized: dict[str, object]) -> None:
+    normalized["account_subdomain"] = clean_text(
+        str(raw_board.get("account_subdomain", "") or raw_board.get("subdomain", ""))
+    ).strip("/")
+    normalized["mode"] = normalize_text(str(raw_board.get("mode", "public"))) or "public"
+    normalized["api_token_env"] = clean_text(str(raw_board.get("api_token_env", "")))
+
+
+def _normalize_generic_html(raw_board: dict[str, object], normalized: dict[str, object]) -> None:
+    normalized["start_urls"] = normalize_url_list(raw_board.get("start_urls", []))
+    raw_allowed_domains = raw_board.get("allowed_domains", [])
+    normalized["allowed_domains"] = normalize_string_list(raw_allowed_domains, lower=True)
+    if not normalized["allowed_domains"]:
+        normalized["allowed_domains"] = dedupe_preserving_order(
+            [urlsplit(url).netloc.lower() for url in normalized["start_urls"] if urlsplit(url).netloc]
+        )
+    normalized["job_link_keywords"] = normalize_string_list(
+        raw_board.get("job_link_keywords", []),
+        lower=True,
+    )
+    normalized["job_link_regexes"] = normalize_string_list(raw_board.get("job_link_regexes", []))
+    normalized["_job_link_patterns"] = [
+        re.compile(pattern, re.IGNORECASE) for pattern in normalized["job_link_regexes"]
+    ]
+    normalized["max_job_pages"] = max(
+        1,
+        min(200, safe_int(raw_board.get("max_job_pages", GENERIC_HTML_MAX_JOB_LINKS), GENERIC_HTML_MAX_JOB_LINKS)),
+    )
+
+
+BOARD_NORMALIZERS = {
+    "greenhouse": _normalize_greenhouse,
+    "lever": _normalize_lever,
+    "ashby": _normalize_ashby,
+    "workable": _normalize_workable,
+    "generic_html": _normalize_generic_html,
+}
+
+
 def normalize_company_board(raw_board: dict[str, object]) -> dict[str, object] | None:
+    """
+    Normalize a raw company board dictionary into a standardized format.
+
+    Args:
+        raw_board: A raw dictionary parsed from a board config file.
+
+    Returns:
+        A normalized dictionary, or None if validation fails.
+    """
     name = clean_text(str(raw_board.get("name", "")))
     platform = normalize_text(str(raw_board.get("platform", ""))).replace(" ", "_")
     if not name or platform not in SUPPORTED_BOARD_PLATFORMS:
@@ -573,50 +630,11 @@ def normalize_company_board(raw_board: dict[str, object]) -> dict[str, object] |
         "min_interval_seconds": max(300, safe_int(raw_board.get("min_interval_seconds", 1800), 1800)),
     }
 
-    if platform == "greenhouse":
-        normalized_board["board_token"] = clean_text(str(raw_board.get("board_token", ""))).strip("/")
-    elif platform == "lever":
-        normalized_board["site"] = clean_text(str(raw_board.get("site", ""))).strip("/")
-        normalized_board["instance"] = normalize_text(str(raw_board.get("instance", "global"))) or "global"
-    elif platform == "ashby":
-        normalized_board["job_board_name"] = clean_text(str(raw_board.get("job_board_name", ""))).strip("/")
-    elif platform == "workable":
-        normalized_board["account_subdomain"] = clean_text(
-            str(raw_board.get("account_subdomain", "") or raw_board.get("subdomain", ""))
-        ).strip("/")
-        normalized_board["mode"] = normalize_text(str(raw_board.get("mode", "public"))) or "public"
-        normalized_board["api_token_env"] = clean_text(str(raw_board.get("api_token_env", "")))
-    elif platform == "generic_html":
-        normalized_board["start_urls"] = normalize_url_list(raw_board.get("start_urls", []))
-        raw_allowed_domains = raw_board.get("allowed_domains", [])
-        normalized_board["allowed_domains"] = normalize_string_list(raw_allowed_domains, lower=True)
-        if not normalized_board["allowed_domains"]:
-            normalized_board["allowed_domains"] = dedupe_preserving_order(
-                [
-                    urlsplit(url).netloc.lower()
-                    for url in normalized_board["start_urls"]
-                    if urlsplit(url).netloc
-                ]
-            )
-        normalized_board["job_link_keywords"] = normalize_string_list(
-            raw_board.get("job_link_keywords", []),
-            lower=True,
-        )
-        normalized_board["job_link_regexes"] = normalize_string_list(raw_board.get("job_link_regexes", []))
-        normalized_board["_job_link_patterns"] = [
-            re.compile(pattern, re.IGNORECASE)
-            for pattern in normalized_board["job_link_regexes"]
-        ]
-        normalized_board["max_job_pages"] = max(
-            1,
-            min(200, safe_int(raw_board.get("max_job_pages", GENERIC_HTML_MAX_JOB_LINKS), GENERIC_HTML_MAX_JOB_LINKS)),
-        )
+    normalizer = BOARD_NORMALIZERS.get(platform)
+    if normalizer:
+        normalizer(raw_board, normalized_board)
 
-    missing_fields = [
-        field
-        for field in COMPANY_BOARD_REQUIRED_FIELDS[platform]
-        if not normalized_board.get(field)
-    ]
+    missing_fields = [field for field in COMPANY_BOARD_REQUIRED_FIELDS[platform] if not normalized_board.get(field)]
     if missing_fields:
         return None
 
@@ -632,28 +650,27 @@ def load_company_boards(company_boards_file: str) -> list[dict[str, object]]:
         with open(boards_path, encoding="utf-8") as f:
             raw_data = json.load(f)
     except (json.JSONDecodeError, OSError) as exc:
-        print(f"Warning: skipping {company_boards_file} — {exc}", file=sys.stderr)
+        logger.warning(f"skipping {company_boards_file} — {exc}")
         return []
 
     if not isinstance(raw_data, list):
-        print(f"Warning: {company_boards_file} must contain a JSON list.", file=sys.stderr)
+        logger.warning(f"file {company_boards_file} must contain a JSON list.")
         return []
 
     normalized_boards = []
     seen_names = set()
     for index, raw_board in enumerate(raw_data):
         if not isinstance(raw_board, dict):
-            print(f"Warning: skipping board #{index + 1} in {company_boards_file} — expected an object.", file=sys.stderr)
+            logger.warning(f"skipping board #{index + 1} in {company_boards_file} — expected an object.")
             continue
         normalized_board = normalize_company_board(raw_board)
         if normalized_board is None:
-            print(
-                f"Warning: skipping board #{index + 1} in {company_boards_file} — invalid or missing required fields.",
-                file=sys.stderr,
+            logger.warning(
+                f"skipping board #{index + 1} in {company_boards_file} — invalid or missing required fields."
             )
             continue
         if normalized_board["name"] in seen_names:
-            print(f"Warning: skipping duplicate board name {normalized_board['name']!r}.", file=sys.stderr)
+            logger.warning(f"skipping duplicate board name {normalized_board['name']!r}.")
             continue
         normalized_boards.append(normalized_board)
         seen_names.add(str(normalized_board["name"]))
@@ -662,9 +679,7 @@ def load_company_boards(company_boards_file: str) -> list[dict[str, object]]:
 
 
 def fetch_greenhouse_board_jobs(board: dict[str, object]) -> list[dict[str, str]]:
-    payload = fetch_json(
-        f"https://boards-api.greenhouse.io/v1/boards/{board['board_token']}/jobs?content=true"
-    )
+    payload = fetch_json(f"https://boards-api.greenhouse.io/v1/boards/{board['board_token']}/jobs?content=true")
     jobs = payload.get("jobs", []) if isinstance(payload, dict) else []
     items = []
 
@@ -681,7 +696,9 @@ def fetch_greenhouse_board_jobs(board: dict[str, object]) -> list[dict[str, str]
             for office in job.get("offices", [])
             if isinstance(office, dict)
         )
-        location = clean_text(str(job.get("location", {}).get("name", ""))) if isinstance(job.get("location"), dict) else ""
+        location = (
+            clean_text(str(job.get("location", {}).get("name", ""))) if isinstance(job.get("location"), dict) else ""
+        )
         items.append(
             {
                 "title": clean_text(str(job.get("title", ""))),
@@ -706,9 +723,7 @@ def fetch_lever_board_jobs(board: dict[str, object]) -> list[dict[str, str]]:
     skip = 0
 
     while True:
-        payload = fetch_json(
-            f"{base_url}/v0/postings/{board['site']}?mode=json&limit={BOARD_PAGE_LIMIT}&skip={skip}"
-        )
+        payload = fetch_json(f"{base_url}/v0/postings/{board['site']}?mode=json&limit={BOARD_PAGE_LIMIT}&skip={skip}")
         jobs = payload if isinstance(payload, list) else []
         if not jobs:
             break
@@ -828,11 +843,7 @@ def fetch_workable_board_jobs(board: dict[str, object]) -> list[dict[str, str]]:
                     board.get("display_name", ""),
                 ),
                 "link": clean_text(
-                    str(
-                        job.get("application_url", "")
-                        or job.get("url", "")
-                        or job.get("shortlink", "")
-                    )
+                    str(job.get("application_url", "") or job.get("url", "") or job.get("shortlink", ""))
                 ),
             }
         )
@@ -841,15 +852,27 @@ def fetch_workable_board_jobs(board: dict[str, object]) -> list[dict[str, str]]:
 
 
 def fetch_company_board_items(board: dict[str, object]) -> list[dict[str, str]]:
-    platform = str(board["platform"])
-    if platform == "greenhouse":
-        return fetch_greenhouse_board_jobs(board)
-    if platform == "lever":
-        return fetch_lever_board_jobs(board)
-    if platform == "ashby":
-        return fetch_ashby_board_jobs(board)
-    if platform == "workable":
-        return fetch_workable_board_jobs(board)
-    if platform == "generic_html":
-        return fetch_generic_html_board_jobs(board)
+    """
+    Fetch job openings for a specific company board using the required backend handler.
+
+    Args:
+        board: A single company board dictionary containing normalized configuration.
+
+    Returns:
+        A list of dictionaries representing the fetched job items.
+    """
+    platform = str(board.get("platform", ""))
+
+    handlers = {
+        "greenhouse": fetch_greenhouse_board_jobs,
+        "lever": fetch_lever_board_jobs,
+        "ashby": fetch_ashby_board_jobs,
+        "workable": fetch_workable_board_jobs,
+        "generic_html": fetch_generic_html_board_jobs,
+    }
+
+    handler = handlers.get(platform)
+    if handler:
+        return handler(board)
+    return []
     raise ValueError(f"Unsupported board platform: {platform}")

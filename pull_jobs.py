@@ -1,13 +1,16 @@
+import logging
 from datetime import datetime, timezone
-import sys
 from time import time
 from urllib.error import HTTPError, URLError
 from xml.etree import ElementTree
 
 import jobbot.common as common
 import jobbot.matching as matching
-import jobbot.storage as storage
 import jobbot.sources as source_module
+import jobbot.storage as storage
+
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+logger = logging.getLogger(__name__)
 
 CSV_FILE = "jobs.csv"
 RESUME_FILE = "resume.json"
@@ -183,6 +186,8 @@ rank_application_for_digest = matching.rank_application_for_digest
 build_daily_digest_snapshot = matching.build_daily_digest_snapshot
 format_daily_digest_message = matching.format_daily_digest_message
 maybe_send_daily_digest = matching.maybe_send_daily_digest
+
+
 def load_resume_profile() -> dict[str, object]:
     return common.load_resume_profile(RESUME_FILE)
 
@@ -304,7 +309,9 @@ def main() -> int:
     seeded_applications = seed_applications_from_existing_jobs(applications_state, existing_jobs)
     sync_application_outcomes(applications_state, current_run_ts)
     initial_cleanup_summary = prune_applications_state(applications_state, search_config, current_run_ts)
-    feedback_profile = build_feedback_metrics(current_run_ts, applications_state, search_config, initial_cleanup_summary)
+    feedback_profile = build_feedback_metrics(
+        current_run_ts, applications_state, search_config, initial_cleanup_summary
+    )
     save_applications_state(applications_state)
 
     for job in existing_jobs:
@@ -338,10 +345,16 @@ def main() -> int:
             for item in items:
                 link = clean_text(item["link"])
                 fingerprints = build_review_fingerprints(item["title"], item["description"], link)
-                if not link or link in existing_links or storage.has_any_reviewed_fingerprint(STATE_DB_FILE, fingerprints):
+                if (
+                    not link
+                    or link in existing_links
+                    or storage.has_any_reviewed_fingerprint(STATE_DB_FILE, fingerprints)
+                ):
                     continue
 
-                evaluation = score_job(item, source_label, profile, search_config, feedback_profile, current_run_ts, lockouts)
+                evaluation = score_job(
+                    item, source_label, profile, search_config, feedback_profile, current_run_ts, lockouts
+                )
                 storage.append_reviewed_fingerprints(STATE_DB_FILE, fingerprints, MAX_REVIEWED_FINGERPRINTS)
                 reviewed_count += 1
                 if not evaluation["qualified"]:
@@ -370,7 +383,7 @@ def main() -> int:
 
         except (ElementTree.ParseError, HTTPError, URLError, OSError, ValueError) as exc:
             source_ref = source.get("url") or source.get("platform") or source.get("name")
-            print(f"Warning: skipping {source_ref} — {exc}", file=sys.stderr)
+            logger.warning(f"skipping {source_ref} — {exc}")
             continue
 
     save_feed_state(feed_state)
@@ -411,7 +424,7 @@ def main() -> int:
         or digest_sent
         or cleanup_summary["removed_count"] > 0
     ):
-        print(
+        logger.info(
             "Jobs: "
             f"found {new_hits} new matches, "
             f"reviewed {reviewed_count} new items, "
@@ -424,12 +437,12 @@ def main() -> int:
             f"digest {'sent' if digest_sent else 'not sent'}."
         )
     else:
-        print("Jobs: No new matches found in this sweep.")
+        logger.info("Jobs: No new matches found in this sweep.")
 
     if delivery_error:
-        print(f"Jobs: {delivery_error}", file=sys.stderr)
+        logger.error(f"Jobs: {delivery_error}")
     if digest_error:
-        print(f"Jobs: {digest_error}", file=sys.stderr)
+        logger.error(f"Jobs: {digest_error}")
 
     return 0
 

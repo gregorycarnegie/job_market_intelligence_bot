@@ -23,3 +23,5 @@ jobs.csv
 matches.json
 output.log
 seen_jobs_state.json
+
+.idea/

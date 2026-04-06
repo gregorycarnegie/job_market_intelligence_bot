@@ -1,10 +1,14 @@
 import json
+import logging
 import os
 import tempfile
 from pathlib import Path
 
 from jobbot import storage
 from jobbot.common import STATE_DB_FILE
+
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+logger = logging.getLogger(__name__)
 
 CSV_FILE = "jobs.csv"
 JSON_FILE = "desc.json"
@@ -49,12 +53,12 @@ def main() -> int:
 
     if latest_ts and latest_ts != json_ts:
         atomic_write_json(latest_csv_batch)
-        print(f"Desc: Staged batch {latest_ts} ({len(latest_csv_batch)} jobs)")
+        logger.info(f"Desc: Staged batch {latest_ts} ({len(latest_csv_batch)} jobs)")
     elif not latest_ts and not json_path.exists():
         atomic_write_json([])
-        print("Desc: Created empty desc.json because no matched jobs exist yet.")
+        logger.info("Desc: Created empty desc.json because no matched jobs exist yet.")
     else:
-        print("Desc: No new run detected or timestamp matches.")
+        logger.info("Desc: No new run detected or timestamp matches.")
     return 0
 
 

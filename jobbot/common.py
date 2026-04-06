@@ -1,7 +1,7 @@
 import html
 import json
+import logging
 import re
-import sys
 import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
@@ -9,14 +9,12 @@ from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from jobbot import storage
 
+logger = logging.getLogger(__name__)
+
 CSV_HEADERS = ["time", "title", "description", "link"]
 STATE_DB_FILE = "jobbot_state.sqlite3"
 FETCH_TIMEOUT_SECONDS = 20
-USER_AGENT = (
-    "Mozilla/5.0 (X11; Linux x86_64) "
-    "AppleWebKit/537.36 (KHTML, like Gecko) "
-    "Chrome/135.0.0.0 Safari/537.36"
-)
+USER_AGENT = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36"
 MIN_MATCH_SCORE = 28
 MAX_ALERTED_LINKS = 5000
 MAX_REVIEWED_FINGERPRINTS = 50000
@@ -128,9 +126,11 @@ def fetch_live_currency_rates() -> None:
             CURRENCY_TO_GBP["usd"] = round(1.0 / rates["USD"], 6)
         if "EUR" in rates:
             CURRENCY_TO_GBP["eur"] = round(1.0 / rates["EUR"], 6)
-        print(f"Rates: 1 GBP = {rates.get('USD', '?')} USD, {rates.get('EUR', '?')} EUR (date: {data.get('date', '?')})")
+        logger.info(
+            f"Rates: 1 GBP = {rates.get('USD', '?')} USD, {rates.get('EUR', '?')} EUR (date: {data.get('date', '?')})"
+        )
     except Exception as exc:
-        print(f"Warning: could not fetch live currency rates, using defaults — {exc}", file=sys.stderr)
+        logger.warning(f"could not fetch live currency rates, using defaults — {exc}")
 
 
 CADENCE_TO_ANNUAL_MULTIPLIER = {
@@ -280,22 +280,22 @@ FEEDS = [
     },
     {
         "name": "google_alerts_corporate",
-        "url": "https://www.google.com/alerts/feeds/09910730576829865385/10714127524543454759", 
+        "url": "https://www.google.com/alerts/feeds/09910730576829865385/10714127524543454759",
         "min_interval_seconds": 3600,
     },
     {
         "name": "google_alerts_core_it_support",
-        "url": "https://www.google.com/alerts/feeds/09910730576829865385/13401058173831861136", 
+        "url": "https://www.google.com/alerts/feeds/09910730576829865385/13401058173831861136",
         "min_interval_seconds": 3600,
     },
     {
         "name": "google_alerts_infrastructure",
-        "url": "https://www.google.com/alerts/feeds/09910730576829865385/15611871513157400765", 
+        "url": "https://www.google.com/alerts/feeds/09910730576829865385/15611871513157400765",
         "min_interval_seconds": 3600,
     },
     {
         "name": "google_alerts_dev_adjacent",
-        "url": "https://www.google.com/alerts/feeds/09910730576829865385/17528292640163305738", 
+        "url": "https://www.google.com/alerts/feeds/09910730576829865385/17528292640163305738",
         "min_interval_seconds": 3600,
     },
     {
@@ -694,7 +694,9 @@ def normalize_role_profile(raw_profile: dict[str, object], index: int) -> dict[s
         title_keywords if isinstance(title_keywords, list) and title_keywords else shared_keywords or []
     )
     description_entries = build_pattern_entries(
-        description_keywords if isinstance(description_keywords, list) and description_keywords else shared_keywords or []
+        description_keywords
+        if isinstance(description_keywords, list) and description_keywords
+        else shared_keywords or []
     )
     if not title_entries and not description_entries:
         return None
@@ -743,7 +745,7 @@ def load_job_search_config(config_file: str) -> dict[str, object]:
             if isinstance(loaded, dict):
                 raw_data = loaded
         except (json.JSONDecodeError, OSError) as exc:
-            print(f"Warning: skipping {config_file} — {exc}", file=sys.stderr)
+            logger.warning(f"skipping {config_file} — {exc}")
 
     whitelist = normalize_company_control_values(raw_data.get("company_whitelist", []))
     blacklist = normalize_company_control_values(raw_data.get("company_blacklist", []))
@@ -752,7 +754,9 @@ def load_job_search_config(config_file: str) -> dict[str, object]:
     feedback = raw_data.get("feedback", {}) if isinstance(raw_data.get("feedback"), dict) else {}
     digest_statuses = [
         status
-        for status in normalize_string_list(daily_digest.get("include_statuses", DEFAULT_DAILY_DIGEST_STATUSES), lower=True)
+        for status in normalize_string_list(
+            daily_digest.get("include_statuses", DEFAULT_DAILY_DIGEST_STATUSES), lower=True
+        )
         if status in APPLICATION_STATUSES
     ]
 
@@ -766,8 +770,12 @@ def load_job_search_config(config_file: str) -> dict[str, object]:
         "role_profiles": normalize_role_profiles(raw_data.get("role_profiles")),
         "daily_digest": {
             "enabled": parse_bool(daily_digest.get("enabled", True), True),
-            "hour_utc": _clamp_int(daily_digest.get("hour_utc", DEFAULT_DAILY_DIGEST_HOUR_UTC), 0, 23, DEFAULT_DAILY_DIGEST_HOUR_UTC),
-            "max_items": _clamp_int(daily_digest.get("max_items", DEFAULT_DAILY_DIGEST_MAX_ITEMS), 1, 20, DEFAULT_DAILY_DIGEST_MAX_ITEMS),
+            "hour_utc": _clamp_int(
+                daily_digest.get("hour_utc", DEFAULT_DAILY_DIGEST_HOUR_UTC), 0, 23, DEFAULT_DAILY_DIGEST_HOUR_UTC
+            ),
+            "max_items": _clamp_int(
+                daily_digest.get("max_items", DEFAULT_DAILY_DIGEST_MAX_ITEMS), 1, 20, DEFAULT_DAILY_DIGEST_MAX_ITEMS
+            ),
             "page_size": _clamp_int(
                 daily_digest.get("page_size", DEFAULT_DAILY_DIGEST_PAGE_SIZE),
                 1,
@@ -778,14 +786,48 @@ def load_job_search_config(config_file: str) -> dict[str, object]:
         },
         "feedback": {
             "enabled": parse_bool(feedback.get("enabled", True), True),
-            "min_samples": _clamp_int(feedback.get("min_samples", DEFAULT_FEEDBACK_MIN_SAMPLES), 1, 20, DEFAULT_FEEDBACK_MIN_SAMPLES),
-            "max_source_adjustment": _clamp_int(feedback.get("max_source_adjustment", DEFAULT_MAX_SOURCE_FEEDBACK_ADJUSTMENT), 1, 20, DEFAULT_MAX_SOURCE_FEEDBACK_ADJUSTMENT),
-            "max_keyword_adjustment": _clamp_int(feedback.get("max_keyword_adjustment", DEFAULT_MAX_KEYWORD_FEEDBACK_ADJUSTMENT), 1, 20, DEFAULT_MAX_KEYWORD_FEEDBACK_ADJUSTMENT),
-            "keyword_limit": _clamp_int(feedback.get("keyword_limit", DEFAULT_FEEDBACK_KEYWORD_LIMIT), 1, 8, DEFAULT_FEEDBACK_KEYWORD_LIMIT),
-            "new_reviewed_retention_days": _clamp_int(feedback.get("new_reviewed_retention_days", DEFAULT_NEW_REVIEWED_RETENTION_DAYS), 30, 3650, DEFAULT_NEW_REVIEWED_RETENTION_DAYS),
-            "rejected_retention_days": _clamp_int(feedback.get("rejected_retention_days", DEFAULT_REJECTED_RETENTION_DAYS), 30, 3650, DEFAULT_REJECTED_RETENTION_DAYS),
-            "applied_retention_days": _clamp_int(feedback.get("applied_retention_days", DEFAULT_APPLIED_RETENTION_DAYS), 30, 3650, DEFAULT_APPLIED_RETENTION_DAYS),
-            "interview_retention_days": _clamp_int(feedback.get("interview_retention_days", DEFAULT_INTERVIEW_RETENTION_DAYS), 30, 3650, DEFAULT_INTERVIEW_RETENTION_DAYS),
+            "min_samples": _clamp_int(
+                feedback.get("min_samples", DEFAULT_FEEDBACK_MIN_SAMPLES), 1, 20, DEFAULT_FEEDBACK_MIN_SAMPLES
+            ),
+            "max_source_adjustment": _clamp_int(
+                feedback.get("max_source_adjustment", DEFAULT_MAX_SOURCE_FEEDBACK_ADJUSTMENT),
+                1,
+                20,
+                DEFAULT_MAX_SOURCE_FEEDBACK_ADJUSTMENT,
+            ),
+            "max_keyword_adjustment": _clamp_int(
+                feedback.get("max_keyword_adjustment", DEFAULT_MAX_KEYWORD_FEEDBACK_ADJUSTMENT),
+                1,
+                20,
+                DEFAULT_MAX_KEYWORD_FEEDBACK_ADJUSTMENT,
+            ),
+            "keyword_limit": _clamp_int(
+                feedback.get("keyword_limit", DEFAULT_FEEDBACK_KEYWORD_LIMIT), 1, 8, DEFAULT_FEEDBACK_KEYWORD_LIMIT
+            ),
+            "new_reviewed_retention_days": _clamp_int(
+                feedback.get("new_reviewed_retention_days", DEFAULT_NEW_REVIEWED_RETENTION_DAYS),
+                30,
+                3650,
+                DEFAULT_NEW_REVIEWED_RETENTION_DAYS,
+            ),
+            "rejected_retention_days": _clamp_int(
+                feedback.get("rejected_retention_days", DEFAULT_REJECTED_RETENTION_DAYS),
+                30,
+                3650,
+                DEFAULT_REJECTED_RETENTION_DAYS,
+            ),
+            "applied_retention_days": _clamp_int(
+                feedback.get("applied_retention_days", DEFAULT_APPLIED_RETENTION_DAYS),
+                30,
+                3650,
+                DEFAULT_APPLIED_RETENTION_DAYS,
+            ),
+            "interview_retention_days": _clamp_int(
+                feedback.get("interview_retention_days", DEFAULT_INTERVIEW_RETENTION_DAYS),
+                30,
+                3650,
+                DEFAULT_INTERVIEW_RETENTION_DAYS,
+            ),
         },
     }
 
@@ -879,11 +921,7 @@ def load_alert_state(alerts_state_file: str) -> dict[str, object]:
         pending_alerts.append(normalized)
         seen_pending_links.add(normalized["link"])
 
-    alerted_links = [
-        clean_text(str(link))
-        for link in state.get("alerted_links", [])
-        if clean_text(str(link))
-    ]
+    alerted_links = [clean_text(str(link)) for link in state.get("alerted_links", []) if clean_text(str(link))]
 
     return {
         "alerted_links": dedupe_preserving_order(alerted_links)[-MAX_ALERTED_LINKS:],

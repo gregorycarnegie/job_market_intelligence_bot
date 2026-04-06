@@ -1,8 +1,10 @@
-import sys
+import logging
 from time import sleep
 
 from jobbot import matching
 
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+logger = logging.getLogger(__name__)
 
 LONG_POLL_TIMEOUT_SECONDS = 25
 ERROR_RETRY_SECONDS = 5
@@ -23,7 +25,7 @@ def run_callback_worker(
         token, _, _ = matching.load_telegram_settings()
         if not token:
             if not warned_missing_token:
-                print("Telegram worker: TELEGRAM_BOT_TOKEN not configured; waiting for credentials.", file=sys.stderr)
+                logger.warning("Telegram worker: TELEGRAM_BOT_TOKEN not configured; waiting for credentials.")
             warned_missing_token = True
             sleep(max(1, missing_token_retry_seconds))
             continue
@@ -31,7 +33,7 @@ def run_callback_worker(
         warned_missing_token = False
         _, error = matching.process_telegram_callback_updates(timeout=max(0, poll_timeout))
         if error:
-            print(f"Telegram worker: {error}", file=sys.stderr)
+            logger.error(f"Telegram worker: {error}")
             sleep(max(1, error_retry_seconds))
 
     return 0

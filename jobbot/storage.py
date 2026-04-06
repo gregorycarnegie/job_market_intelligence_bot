@@ -3,7 +3,6 @@ import json
 import sqlite3
 from pathlib import Path
 
-
 CSV_HEADERS = ["time", "title", "description", "link"]
 
 
@@ -163,9 +162,7 @@ def _index_application(connection: sqlite3.Connection, application: dict[str, ob
 
 def load_jobs(db_file: str) -> list[dict[str, str]]:
     with _connect(db_file) as connection:
-        rows = connection.execute(
-            "SELECT time, title, description, link FROM jobs ORDER BY id"
-        ).fetchall()
+        rows = connection.execute("SELECT time, title, description, link FROM jobs ORDER BY id").fetchall()
     return [
         {
             "time": str(row["time"]),
@@ -203,24 +200,23 @@ def append_jobs(db_file: str, rows: list[dict[str, str]]) -> None:
     if not rows:
         return
 
-    with _connect(db_file) as connection:
-        with connection:
-            connection.executemany(
-                """
+    with _connect(db_file) as connection, connection:
+        connection.executemany(
+            """
                 INSERT OR IGNORE INTO jobs(time, title, description, link)
                 VALUES (?, ?, ?, ?)
                 """,
-                [
-                    (
-                        str(row.get("time", "")),
-                        str(row.get("title", "")),
-                        str(row.get("description", "")),
-                        str(row.get("link", "")),
-                    )
-                    for row in rows
-                    if str(row.get("link", ""))
-                ],
-            )
+            [
+                (
+                    str(row.get("time", "")),
+                    str(row.get("title", "")),
+                    str(row.get("description", "")),
+                    str(row.get("link", "")),
+                )
+                for row in rows
+                if str(row.get("link", ""))
+            ],
+        )
 
 
 def export_jobs_to_csv(db_file: str, csv_file: str) -> None:
@@ -234,38 +230,30 @@ def export_jobs_to_csv(db_file: str, csv_file: str) -> None:
 
 def load_feed_state(db_file: str) -> dict[str, dict[str, float]]:
     with _connect(db_file) as connection:
-        rows = connection.execute(
-            "SELECT name, last_checked_at FROM feed_state ORDER BY name"
-        ).fetchall()
-    return {
-        str(row["name"]): {"last_checked_at": float(row["last_checked_at"])}
-        for row in rows
-    }
+        rows = connection.execute("SELECT name, last_checked_at FROM feed_state ORDER BY name").fetchall()
+    return {str(row["name"]): {"last_checked_at": float(row["last_checked_at"])} for row in rows}
 
 
 def save_feed_state(db_file: str, feed_state: dict[str, dict[str, float]]) -> None:
-    with _connect(db_file) as connection:
-        with connection:
-            connection.execute("DELETE FROM feed_state")
-            connection.executemany(
-                "INSERT INTO feed_state(name, last_checked_at) VALUES (?, ?)",
-                [
-                    (
-                        name,
-                        float(state.get("last_checked_at", 0)),
-                    )
-                    for name, state in feed_state.items()
-                ],
-            )
+    with _connect(db_file) as connection, connection:
+        connection.execute("DELETE FROM feed_state")
+        connection.executemany(
+            "INSERT INTO feed_state(name, last_checked_at) VALUES (?, ?)",
+            [
+                (
+                    name,
+                    float(state.get("last_checked_at", 0)),
+                )
+                for name, state in feed_state.items()
+            ],
+        )
 
 
 def load_seen_jobs_state(db_file: str) -> dict[str, object]:
     with _connect(db_file) as connection:
         fingerprints = [
             str(row["fingerprint"])
-            for row in connection.execute(
-                "SELECT fingerprint FROM reviewed_fingerprints ORDER BY position"
-            ).fetchall()
+            for row in connection.execute("SELECT fingerprint FROM reviewed_fingerprints ORDER BY position").fetchall()
         ]
         metadata = _load_scope_metadata(connection, "seen_jobs")
 
@@ -298,22 +286,21 @@ def append_reviewed_fingerprints(db_file: str, fingerprints: list[str], max_item
     candidates = _dedupe_values(fingerprints)
     if not candidates:
         return
-    with _connect(db_file) as connection:
-        with connection:
-            position = _next_position(connection, "reviewed_fingerprints")
-            for fingerprint in candidates:
-                connection.execute(
-                    "INSERT OR IGNORE INTO reviewed_fingerprints(position, fingerprint) VALUES (?, ?)",
-                    (position, fingerprint),
-                )
-                position += 1
+    with _connect(db_file) as connection, connection:
+        position = _next_position(connection, "reviewed_fingerprints")
+        for fingerprint in candidates:
+            connection.execute(
+                "INSERT OR IGNORE INTO reviewed_fingerprints(position, fingerprint) VALUES (?, ?)",
+                (position, fingerprint),
+            )
+            position += 1
 
-            row = connection.execute("SELECT COUNT(*) AS count FROM reviewed_fingerprints").fetchone()
-            total_count = int(row["count"]) if row is not None else 0
-            overflow = max(0, total_count - max_items)
-            if overflow:
-                connection.execute(
-                    """
+        row = connection.execute("SELECT COUNT(*) AS count FROM reviewed_fingerprints").fetchone()
+        total_count = int(row["count"]) if row is not None else 0
+        overflow = max(0, total_count - max_items)
+        if overflow:
+            connection.execute(
+                """
                     DELETE FROM reviewed_fingerprints
                     WHERE fingerprint IN (
                         SELECT fingerprint
@@ -322,42 +309,33 @@ def append_reviewed_fingerprints(db_file: str, fingerprints: list[str], max_item
                         LIMIT ?
                     )
                     """,
-                    (overflow,),
-                )
+                (overflow,),
+            )
 
 
 def save_seen_jobs_state(db_file: str, seen_jobs_state: dict[str, object]) -> None:
     fingerprints = list(seen_jobs_state.get("reviewed_fingerprints", []))
-    with _connect(db_file) as connection:
-        with connection:
-            connection.execute("DELETE FROM reviewed_fingerprints")
-            connection.executemany(
-                "INSERT INTO reviewed_fingerprints(position, fingerprint) VALUES (?, ?)",
-                [
-                    (position, str(fingerprint))
-                    for position, fingerprint in enumerate(fingerprints)
-                    if str(fingerprint)
-                ],
-            )
-            _save_scope_metadata(
-                connection,
-                "seen_jobs",
-                {"last_run_utc": seen_jobs_state.get("last_run_utc", "")},
-            )
+    with _connect(db_file) as connection, connection:
+        connection.execute("DELETE FROM reviewed_fingerprints")
+        connection.executemany(
+            "INSERT INTO reviewed_fingerprints(position, fingerprint) VALUES (?, ?)",
+            [(position, str(fingerprint)) for position, fingerprint in enumerate(fingerprints) if str(fingerprint)],
+        )
+        _save_scope_metadata(
+            connection,
+            "seen_jobs",
+            {"last_run_utc": seen_jobs_state.get("last_run_utc", "")},
+        )
 
 
 def load_alert_state(db_file: str) -> dict[str, object]:
     with _connect(db_file) as connection:
         alerted_links = [
             str(row["link"])
-            for row in connection.execute(
-                "SELECT link FROM alerted_links ORDER BY position"
-            ).fetchall()
+            for row in connection.execute("SELECT link FROM alerted_links ORDER BY position").fetchall()
         ]
         pending_alerts = []
-        for row in connection.execute(
-            "SELECT payload_json FROM pending_alerts ORDER BY position"
-        ).fetchall():
+        for row in connection.execute("SELECT payload_json FROM pending_alerts ORDER BY position").fetchall():
             try:
                 payload = json.loads(str(row["payload_json"]))
             except json.JSONDecodeError:
@@ -378,47 +356,40 @@ def load_alert_state(db_file: str) -> dict[str, object]:
 def save_alert_state(db_file: str, alert_state: dict[str, object]) -> None:
     alerted_links = list(alert_state.get("alerted_links", []))
     pending_alerts = list(alert_state.get("pending_alerts", []))
-    with _connect(db_file) as connection:
-        with connection:
-            connection.execute("DELETE FROM alerted_links")
-            connection.executemany(
-                "INSERT INTO alerted_links(position, link) VALUES (?, ?)",
-                [
-                    (position, str(link))
-                    for position, link in enumerate(alerted_links)
-                    if str(link)
-                ],
-            )
-            connection.execute("DELETE FROM pending_alerts")
-            connection.executemany(
-                "INSERT INTO pending_alerts(position, link, payload_json) VALUES (?, ?, ?)",
-                [
-                    (
-                        position,
-                        str(payload.get("link", "")),
-                        json.dumps(payload, ensure_ascii=False),
-                    )
-                    for position, payload in enumerate(pending_alerts)
-                    if isinstance(payload, dict) and str(payload.get("link", ""))
-                ],
-            )
-            _save_scope_metadata(
-                connection,
-                "alerts",
-                {
-                    "last_run_utc": alert_state.get("last_run_utc", ""),
-                    "last_delivery_utc": alert_state.get("last_delivery_utc", ""),
-                    "last_delivery_error": alert_state.get("last_delivery_error", ""),
-                },
-            )
+    with _connect(db_file) as connection, connection:
+        connection.execute("DELETE FROM alerted_links")
+        connection.executemany(
+            "INSERT INTO alerted_links(position, link) VALUES (?, ?)",
+            [(position, str(link)) for position, link in enumerate(alerted_links) if str(link)],
+        )
+        connection.execute("DELETE FROM pending_alerts")
+        connection.executemany(
+            "INSERT INTO pending_alerts(position, link, payload_json) VALUES (?, ?, ?)",
+            [
+                (
+                    position,
+                    str(payload.get("link", "")),
+                    json.dumps(payload, ensure_ascii=False),
+                )
+                for position, payload in enumerate(pending_alerts)
+                if isinstance(payload, dict) and str(payload.get("link", ""))
+            ],
+        )
+        _save_scope_metadata(
+            connection,
+            "alerts",
+            {
+                "last_run_utc": alert_state.get("last_run_utc", ""),
+                "last_delivery_utc": alert_state.get("last_delivery_utc", ""),
+                "last_delivery_error": alert_state.get("last_delivery_error", ""),
+            },
+        )
 
 
 def load_applications_state(db_file: str) -> dict[str, object]:
     with _connect(db_file) as connection:
         applications = []
-        for row in connection.execute(
-            "SELECT payload_json FROM applications ORDER BY position"
-        ).fetchall():
+        for row in connection.execute("SELECT payload_json FROM applications ORDER BY position").fetchall():
             try:
                 payload = json.loads(str(row["payload_json"]))
             except json.JSONDecodeError:
@@ -487,69 +458,67 @@ def save_application_record(
     if not application_link:
         return
 
-    with _connect(db_file) as connection:
-        with connection:
-            row = None
-            if previous_link:
-                row = connection.execute(
-                    "SELECT position FROM applications WHERE link = ?",
-                    (previous_link,),
-                ).fetchone()
-            if row is None:
-                row = connection.execute(
-                    "SELECT position FROM applications WHERE link = ?",
-                    (application_link,),
-                ).fetchone()
-            position = int(row["position"]) if row is not None else _next_position(connection, "applications")
+    with _connect(db_file) as connection, connection:
+        row = None
+        if previous_link:
+            row = connection.execute(
+                "SELECT position FROM applications WHERE link = ?",
+                (previous_link,),
+            ).fetchone()
+        if row is None:
+            row = connection.execute(
+                "SELECT position FROM applications WHERE link = ?",
+                (application_link,),
+            ).fetchone()
+        position = int(row["position"]) if row is not None else _next_position(connection, "applications")
 
-            if previous_link:
-                _delete_application_indexes(connection, previous_link)
-                connection.execute("DELETE FROM applications WHERE link = ?", (previous_link,))
-            if application_link != previous_link:
-                _delete_application_indexes(connection, application_link)
-                connection.execute("DELETE FROM applications WHERE link = ?", (application_link,))
+        if previous_link:
+            _delete_application_indexes(connection, previous_link)
+            connection.execute("DELETE FROM applications WHERE link = ?", (previous_link,))
+        if application_link != previous_link:
+            _delete_application_indexes(connection, application_link)
+            connection.execute("DELETE FROM applications WHERE link = ?", (application_link,))
 
-            connection.execute(
-                "INSERT INTO applications(position, link, payload_json) VALUES (?, ?, ?)",
-                (position, application_link, json.dumps(application, ensure_ascii=False)),
-            )
-            _index_application(connection, application)
+        connection.execute(
+            "INSERT INTO applications(position, link, payload_json) VALUES (?, ?, ?)",
+            (position, application_link, json.dumps(application, ensure_ascii=False)),
+        )
+        _index_application(connection, application)
 
 
 def save_applications_state(db_file: str, applications_state: dict[str, object]) -> None:
     applications = list(applications_state.get("applications", []))
-    with _connect(db_file) as connection:
-        with connection:
-            connection.execute("DELETE FROM applications")
-            connection.execute("DELETE FROM application_links")
-            connection.execute("DELETE FROM application_fingerprints")
-            connection.executemany(
-                "INSERT INTO applications(position, link, payload_json) VALUES (?, ?, ?)",
-                [
-                    (
-                        position,
-                        str(application.get("link", "")),
-                        json.dumps(application, ensure_ascii=False),
-                    )
-                    for position, application in enumerate(applications)
-                    if isinstance(application, dict) and str(application.get("link", ""))
-                ],
-            )
-            for application in applications:
-                if isinstance(application, dict) and str(application.get("link", "")):
-                    _index_application(connection, application)
-            _save_scope_metadata(
-                connection,
-                "applications",
-                {
-                    "last_updated_utc": applications_state.get("last_updated_utc", ""),
-                    "last_digest_utc": applications_state.get("last_digest_utc", ""),
-                    "last_digest_date_utc": applications_state.get("last_digest_date_utc", ""),
-                    "last_digest_error": applications_state.get("last_digest_error", ""),
-                    "last_feedback_utc": applications_state.get("last_feedback_utc", ""),
-                    "last_cleanup_utc": applications_state.get("last_cleanup_utc", ""),
-                },
-            )
+    with _connect(db_file) as connection, connection:
+        connection.execute("DELETE FROM applications")
+        connection.execute("DELETE FROM application_links")
+        connection.execute("DELETE FROM application_fingerprints")
+        connection.executemany(
+            "INSERT INTO applications(position, link, payload_json) VALUES (?, ?, ?)",
+            [
+                (
+                    position,
+                    str(application.get("link", "")),
+                    json.dumps(application, ensure_ascii=False),
+                )
+                for position, application in enumerate(applications)
+                if isinstance(application, dict) and str(application.get("link", ""))
+            ],
+        )
+        for application in applications:
+            if isinstance(application, dict) and str(application.get("link", "")):
+                _index_application(connection, application)
+        _save_scope_metadata(
+            connection,
+            "applications",
+            {
+                "last_updated_utc": applications_state.get("last_updated_utc", ""),
+                "last_digest_utc": applications_state.get("last_digest_utc", ""),
+                "last_digest_date_utc": applications_state.get("last_digest_date_utc", ""),
+                "last_digest_error": applications_state.get("last_digest_error", ""),
+                "last_feedback_utc": applications_state.get("last_feedback_utc", ""),
+                "last_cleanup_utc": applications_state.get("last_cleanup_utc", ""),
+            },
+        )
 
 
 def load_telegram_update_offset(db_file: str) -> int:
@@ -562,12 +531,11 @@ def load_telegram_update_offset(db_file: str) -> int:
 
 
 def save_telegram_update_offset(db_file: str, offset: int) -> None:
-    with _connect(db_file) as connection:
-        with connection:
-            connection.execute(
-                "INSERT OR REPLACE INTO state_metadata(scope, key, value) VALUES ('telegram', 'update_offset', ?)",
-                (str(max(0, int(offset))),),
-            )
+    with _connect(db_file) as connection, connection:
+        connection.execute(
+            "INSERT OR REPLACE INTO state_metadata(scope, key, value) VALUES ('telegram', 'update_offset', ?)",
+            (str(max(0, int(offset))),),
+        )
 
 
 def save_telegram_digest_session(
@@ -577,22 +545,21 @@ def save_telegram_digest_session(
     pages: list[str],
     keep_latest: int = 20,
 ) -> None:
-    with _connect(db_file) as connection:
-        with connection:
-            connection.execute(
-                """
+    with _connect(db_file) as connection, connection:
+        connection.execute(
+            """
                 INSERT OR REPLACE INTO telegram_digest_sessions(session_id, created_at, pages_json)
                 VALUES (?, ?, ?)
                 """,
-                (session_id, created_at, json.dumps(list(pages), ensure_ascii=False)),
-            )
-            if keep_latest > 0:
-                row = connection.execute("SELECT COUNT(*) AS count FROM telegram_digest_sessions").fetchone()
-                total_count = int(row["count"]) if row is not None else 0
-                overflow = max(0, total_count - keep_latest)
-                if overflow:
-                    connection.execute(
-                        """
+            (session_id, created_at, json.dumps(list(pages), ensure_ascii=False)),
+        )
+        if keep_latest > 0:
+            row = connection.execute("SELECT COUNT(*) AS count FROM telegram_digest_sessions").fetchone()
+            total_count = int(row["count"]) if row is not None else 0
+            overflow = max(0, total_count - keep_latest)
+            if overflow:
+                connection.execute(
+                    """
                         DELETE FROM telegram_digest_sessions
                         WHERE session_id IN (
                             SELECT session_id
@@ -601,8 +568,8 @@ def save_telegram_digest_session(
                             LIMIT ?
                         )
                         """,
-                        (overflow,),
-                    )
+                    (overflow,),
+                )
 
 
 def load_telegram_digest_session(db_file: str, session_id: str) -> dict[str, object] | None:

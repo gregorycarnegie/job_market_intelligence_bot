@@ -7,9 +7,8 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from jobbot import storage as jobbot_storage
 import pull_jobs
-
+from jobbot import storage as jobbot_storage
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 RESUME_PATH = REPO_ROOT / "resume.json"
@@ -62,7 +61,13 @@ class PullJobsTestCase(unittest.TestCase):
             "example_board",
             self.profile,
             search_config,
-            {"enabled": False, "source_adjustments": {}, "keyword_adjustments": {}, "keyword_limit": 4, "max_keyword_adjustment": 6},
+            {
+                "enabled": False,
+                "source_adjustments": {},
+                "keyword_adjustments": {},
+                "keyword_limit": 4,
+                "max_keyword_adjustment": 6,
+            },
             "2026-04-04T10:00:00Z",
             lockouts,
         )
@@ -95,7 +100,13 @@ class PullJobsTestCase(unittest.TestCase):
             "example_board",
             self.profile,
             search_config,
-            {"enabled": False, "source_adjustments": {}, "keyword_adjustments": {}, "keyword_limit": 4, "max_keyword_adjustment": 6},
+            {
+                "enabled": False,
+                "source_adjustments": {},
+                "keyword_adjustments": {},
+                "keyword_limit": 4,
+                "max_keyword_adjustment": 6,
+            },
             "2026-04-04T10:00:00Z",
             ["remote us", "us only"],
         )

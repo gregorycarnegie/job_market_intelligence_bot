@@ -26,6 +26,7 @@ from jobbot.common import (
     SENIORITY_PENALTIES,
     STATE_DB_FILE,
     USER_AGENT,
+    PatternEntry,
     append_reason,
     atomic_write_json,
     build_focus_phrases,
@@ -62,11 +63,7 @@ def normalize_application_record(payload: dict[str, object]) -> dict[str, object
     raw_fingerprints = payload.get("fingerprints", [])
     if not isinstance(raw_fingerprints, list):
         raw_fingerprints = [raw_fingerprints] if raw_fingerprints else []
-    fingerprints = [
-        clean_text(str(fingerprint))
-        for fingerprint in raw_fingerprints
-        if clean_text(str(fingerprint))
-    ]
+    fingerprints = [clean_text(str(fingerprint)) for fingerprint in raw_fingerprints if clean_text(str(fingerprint))]
     if not fingerprints and (title or link):
         fingerprints = build_review_fingerprints(title, description, link)
 
@@ -100,19 +97,13 @@ def normalize_application_record(payload: dict[str, object]) -> dict[str, object
     raw_resume_bullets = payload.get("resume_bullet_suggestions", [])
     if not isinstance(raw_resume_bullets, list):
         raw_resume_bullets = [raw_resume_bullets] if raw_resume_bullets else []
-    resume_bullet_suggestions = [
-        ensure_sentence(bullet)
-        for bullet in raw_resume_bullets
-        if clean_text(str(bullet))
-    ]
+    resume_bullet_suggestions = [ensure_sentence(bullet) for bullet in raw_resume_bullets if clean_text(str(bullet))]
 
     raw_feedback_keywords = payload.get("feedback_keywords", [])
     if not isinstance(raw_feedback_keywords, list):
         raw_feedback_keywords = [raw_feedback_keywords] if raw_feedback_keywords else []
     feedback_keywords = [
-        normalize_text(str(keyword))
-        for keyword in raw_feedback_keywords
-        if normalize_text(str(keyword))
+        normalize_text(str(keyword)) for keyword in raw_feedback_keywords if normalize_text(str(keyword))
     ]
 
     score = safe_int(payload.get("score", 0), 0)
@@ -258,7 +249,7 @@ def parse_salary_amount(raw_amount: str, has_k_suffix: str | None) -> float:
 def annualize_salary_to_gbp(amount: float, currency: str, cadence: str) -> int:
     rate = CURRENCY_TO_GBP[currency]
     multiplier = CADENCE_TO_ANNUAL_MULTIPLIER[cadence]
-    return int(round(amount * rate * multiplier))
+    return round(amount * rate * multiplier)
 
 
 def build_salary_info(
@@ -316,7 +307,7 @@ def extract_salary_range_gbp(text: str) -> dict[str, object] | None:
         currency = normalize_currency_token(match.group("currency"))
         if currency not in CURRENCY_TO_GBP:
             continue
-        cadence = detect_salary_cadence(normalized[match.start(): match.end() + 32])
+        cadence = detect_salary_cadence(normalized[match.start() : match.end() + 32])
         minimum_amount = parse_salary_amount(match.group("minimum"), match.group("minimum_k"))
         maximum_amount = parse_salary_amount(match.group("maximum"), match.group("maximum_k"))
         if cadence == "year" and max(minimum_amount, maximum_amount) < 1000:
@@ -330,7 +321,7 @@ def extract_salary_range_gbp(text: str) -> dict[str, object] | None:
         currency = normalize_currency_token(match.group("currency"))
         if currency not in CURRENCY_TO_GBP:
             continue
-        cadence = detect_salary_cadence(normalized[match.start(): match.end() + 32])
+        cadence = detect_salary_cadence(normalized[match.start() : match.end() + 32])
         amount = parse_salary_amount(match.group("amount"), match.group("amount_k"))
         if cadence == "year" and amount < 1000:
             continue
@@ -409,7 +400,9 @@ def evaluate_role_profile(
         ]
         if not title_matches and not description_matches:
             continue
-        score_delta = len(title_matches) * int(profile["title_boost"]) + len(description_matches) * int(profile["description_boost"])
+        score_delta = len(title_matches) * int(profile["title_boost"]) + len(description_matches) * int(
+            profile["description_boost"]
+        )
         sort_key = (score_delta, int(profile["priority"]), len(title_matches), len(description_matches))
         if best_sort_key is None or sort_key > best_sort_key:
             best_sort_key = sort_key
@@ -423,7 +416,9 @@ def evaluate_role_profile(
     return best_match
 
 
-def select_resume_evidence(profile: dict[str, object], focus_phrases: list[str], limit: int = 3) -> list[dict[str, object]]:
+def select_resume_evidence(
+    profile: dict[str, object], focus_phrases: list[str], limit: int = 3
+) -> list[dict[str, object]]:
     experience_entries = list(profile.get("experience_entries", []))
     if not experience_entries:
         return []
@@ -436,7 +431,9 @@ def select_resume_evidence(profile: dict[str, object], focus_phrases: list[str],
         entry_text = clean_text(str(entry.get("text", "")))
         if not entry_text:
             continue
-        matches = find_pattern_matches(str(entry.get("normalized_text", "")), focus_entries, limit=4) if focus_entries else []
+        matches = (
+            find_pattern_matches(str(entry.get("normalized_text", "")), focus_entries, limit=4) if focus_entries else []
+        )
         candidate = {
             "label": clean_text(str(entry.get("label", ""))) or "Experience",
             "role": clean_text(str(entry.get("role", ""))),
@@ -445,7 +442,11 @@ def select_resume_evidence(profile: dict[str, object], focus_phrases: list[str],
             "matches": matches,
         }
         if matches:
-            rank = len(matches) * 6 + (1 if candidate["organization"] else 0) + (1 if candidate["label"] != "Resume summary" else 0)
+            rank = (
+                len(matches) * 6
+                + (1 if candidate["organization"] else 0)
+                + (1 if candidate["label"] != "Resume summary" else 0)
+            )
             ranked_entries.append((rank, -index, candidate))
         elif candidate["label"] != "Resume summary":
             fallback_entries.append(candidate)
@@ -465,19 +466,35 @@ def build_why_this_fits_notes(
 ) -> list[str]:
     notes = []
     if company_preferences["control"] == "priority" and company_name:
-        notes.append(ensure_sentence(f"{company_name} is on your priority-employer shortlist, so this role deserves fast review"))
+        notes.append(
+            ensure_sentence(f"{company_name} is on your priority-employer shortlist, so this role deserves fast review")
+        )
     if role_profile_match.get("display_name"):
         if title_alignment_matches:
-            notes.append(ensure_sentence(f"The role sits in your {role_profile_match['display_name']} lane and overlaps with target titles like {', '.join(title_alignment_matches[:3])}"))
+            notes.append(
+                ensure_sentence(
+                    f"The role sits in your {role_profile_match['display_name']} lane and overlaps with target titles like {', '.join(title_alignment_matches[:3])}"
+                )
+            )
         else:
             notes.append(ensure_sentence(f"The role sits in your {role_profile_match['display_name']} lane"))
     elif title_alignment_matches:
-        notes.append(ensure_sentence(f"The title overlaps directly with your target role focus: {', '.join(title_alignment_matches[:3])}"))
+        notes.append(
+            ensure_sentence(
+                f"The title overlaps directly with your target role focus: {', '.join(title_alignment_matches[:3])}"
+            )
+        )
     if skill_focus_phrases:
-        notes.append(ensure_sentence(f"The job text overlaps with your hands-on stack in {', '.join(skill_focus_phrases[:4])}"))
+        notes.append(
+            ensure_sentence(f"The job text overlaps with your hands-on stack in {', '.join(skill_focus_phrases[:4])}")
+        )
     if evidence_entries:
         top_evidence = evidence_entries[0]
-        notes.append(ensure_sentence(f"You already have direct evidence from {top_evidence['label']}: {truncate_text(top_evidence['text'], 170)}"))
+        notes.append(
+            ensure_sentence(
+                f"You already have direct evidence from {top_evidence['label']}: {truncate_text(top_evidence['text'], 170)}"
+            )
+        )
     return dedupe_preserving_order([note for note in notes if note])[:3]
 
 
@@ -500,8 +517,16 @@ def build_intro_message(
     candidate_name = clean_text(str(profile.get("candidate_name", "")))
     candidate_title = clean_text(str(profile.get("candidate_title", ""))) or "IT support professional"
     greeting = f"Hi {company_name} team," if company_name else "Hi hiring team,"
-    intro_subject = f"I'm {candidate_name}, currently working as {candidate_title}" if candidate_name else f"I'm a {candidate_title}"
-    skill_clause = ", ".join(skill_focus_phrases[:3]) if skill_focus_phrases else "IT support, Microsoft 365, and identity/access administration"
+    intro_subject = (
+        f"I'm {candidate_name}, currently working as {candidate_title}"
+        if candidate_name
+        else f"I'm a {candidate_title}"
+    )
+    skill_clause = (
+        ", ".join(skill_focus_phrases[:3])
+        if skill_focus_phrases
+        else "IT support, Microsoft 365, and identity/access administration"
+    )
     role_name = role_title or "this role"
     evidence_clause = ""
     if evidence_entries:
@@ -526,7 +551,9 @@ def build_application_materials(
     title_alignment_matches: list[str],
     skill_focus_phrases: list[str],
 ) -> dict[str, object]:
-    evidence_entries = select_resume_evidence(profile, build_focus_phrases(title_alignment_matches, skill_focus_phrases), limit=3)
+    evidence_entries = select_resume_evidence(
+        profile, build_focus_phrases(title_alignment_matches, skill_focus_phrases), limit=3
+    )
     why_this_fits = build_why_this_fits_notes(
         company_name,
         company_preferences,
@@ -557,7 +584,10 @@ def apply_feedback_adjustments(
     source_adjustment = safe_int(feedback_profile["source_adjustments"].get(source_key, 0), 0)
     if source_adjustment:
         score_delta += source_adjustment
-        append_reason(reasons, f"feedback source {'boost' if source_adjustment > 0 else 'penalty'}: {clean_text(source_label)} ({source_adjustment:+d})")
+        append_reason(
+            reasons,
+            f"feedback source {'boost' if source_adjustment > 0 else 'penalty'}: {clean_text(source_label)} ({source_adjustment:+d})",
+        )
     keyword_adjustments = []
     for keyword in dedupe_preserving_order(feedback_keywords):
         adjustment = safe_int(feedback_profile["keyword_adjustments"].get(keyword, 0), 0)
@@ -571,9 +601,144 @@ def apply_feedback_adjustments(
         total_keyword_delta = max(-max_keyword_delta, min(max_keyword_delta, total_keyword_delta))
         if total_keyword_delta:
             score_delta += total_keyword_delta
-            adjustment_text = ", ".join(f"{keyword} ({adjustment:+d})" for keyword, adjustment in selected_adjustments[:3])
-            append_reason(reasons, f"feedback keywords {'boost' if total_keyword_delta > 0 else 'penalty'}: {adjustment_text}")
+            adjustment_text = ", ".join(
+                f"{keyword} ({adjustment:+d})" for keyword, adjustment in selected_adjustments[:3]
+            )
+            append_reason(
+                reasons, f"feedback keywords {'boost' if total_keyword_delta > 0 else 'penalty'}: {adjustment_text}"
+            )
     return score + score_delta
+
+
+def _calculate_target_role_score(
+    normalized_title: str, normalized_desc: str, target_role_entries: list[PatternEntry], reasons: list[str]
+) -> tuple[int, list[str]]:
+    """
+    Calculate score contribution based on target role matches in title and description.
+
+    Args:
+        normalized_title: The normalized job title.
+        normalized_desc: The normalized job description.
+        target_role_entries: A list of pattern entries for target roles.
+        reasons: A list to append scoring reasons to.
+
+    Returns:
+        A tuple of (score delta, target title matches).
+    """
+    score = 0
+    target_title_matches = find_pattern_matches(normalized_title, target_role_entries, limit=3)
+    if target_title_matches:
+        score += min(48, 34 + 7 * (len(target_title_matches) - 1))
+        append_reason(reasons, f"target role in title: {', '.join(target_title_matches)}")
+    target_desc_matches = [
+        match
+        for match in find_pattern_matches(normalized_desc, target_role_entries, limit=3)
+        if match not in target_title_matches
+    ]
+    if target_desc_matches:
+        score += min(18, 9 * len(target_desc_matches))
+        append_reason(reasons, f"target role in description: {', '.join(target_desc_matches)}")
+    return score, target_title_matches
+
+
+def _calculate_skill_score(
+    normalized_title: str, normalized_desc: str, skill_entries: list[PatternEntry], reasons: list[str]
+) -> tuple[int, list[str], list[str]]:
+    """
+    Calculate score contribution based on skill matches in title and description.
+
+    Args:
+        normalized_title: The normalized job title.
+        normalized_desc: The normalized job description.
+        skill_entries: A list of pattern entries for desired skills.
+        reasons: A list to append scoring reasons to.
+
+    Returns:
+        A tuple of (score delta, title skill matches, description skill matches).
+    """
+    score = 0
+    skill_title_matches = find_pattern_matches(normalized_title, skill_entries, limit=4)
+    if skill_title_matches:
+        score += min(18, 6 * len(skill_title_matches))
+        append_reason(reasons, f"skills in title: {', '.join(skill_title_matches)}")
+    skill_desc_matches = [
+        match
+        for match in find_pattern_matches(normalized_desc, skill_entries, limit=5)
+        if match not in skill_title_matches
+    ]
+    if skill_desc_matches:
+        score += min(20, 4 * len(skill_desc_matches))
+        append_reason(reasons, f"skills in description: {', '.join(skill_desc_matches)}")
+    return score, skill_title_matches, skill_desc_matches
+
+
+def _calculate_competency_score(
+    normalized_full_text: str, competency_entries: list[PatternEntry], reasons: list[str]
+) -> tuple[int, list[str]]:
+    """
+    Calculate score contribution based on competency matches in the full text.
+
+    Args:
+        normalized_full_text: The normalized job title and description.
+        competency_entries: A list of pattern entries for desired competencies.
+        reasons: A list to append scoring reasons to.
+
+    Returns:
+        A tuple of (score delta, competency matches).
+    """
+    score = 0
+    competency_matches = find_pattern_matches(normalized_full_text, competency_entries, limit=4)
+    if competency_matches:
+        score += min(12, 3 * len(competency_matches))
+        append_reason(reasons, f"competencies matched: {', '.join(competency_matches)}")
+    return score, competency_matches
+
+
+def _apply_title_weights(normalized_title: str, reasons: list[str]) -> int:
+    """
+    Apply title weights (bonuses and penalties) based on seniority and keywords.
+
+    Args:
+        normalized_title: The normalized job title.
+        reasons: A list to append scoring reasons to.
+
+    Returns:
+        The total score delta from title weights.
+    """
+    score = 0
+    score += apply_weight_map(normalized_title, POSITIVE_TITLE_WEIGHTS, reasons, "title boost")
+    score -= apply_weight_map(normalized_title, NEGATIVE_TITLE_WEIGHTS, reasons, "title penalty")
+    score -= apply_weight_map(normalized_title, SENIORITY_PENALTIES, reasons, "seniority penalty")
+    return score
+
+
+def _apply_salary_preferences(raw_title: str, raw_desc: str, prefs: dict[str, object], reasons: list[str]) -> int:
+    """
+    Apply generic salary preferences, boosting jobs above minimum or penalizing jobs below.
+
+    Args:
+        raw_title: The raw job title.
+        raw_desc: The raw job description.
+        prefs: Dictionary of user preferences, expecting 'minimum_salary_gbp'.
+        reasons: A list to append scoring reasons to.
+
+    Returns:
+        The score delta based on salary evaluation.
+    """
+    score = 0
+    salary_range = extract_salary_range_gbp(f"{raw_title} {raw_desc}")
+    minimum_salary_gbp = int(prefs.get("minimum_salary_gbp", 0) or 0)
+    if salary_range and minimum_salary_gbp:
+        salary_min = safe_int(salary_range["min_gbp"])
+        salary_max = safe_int(salary_range["max_gbp"])
+        salary_reason = format_salary_info_for_reason(salary_range)
+        if salary_max < minimum_salary_gbp:
+            score -= 18
+            append_reason(reasons, f"salary penalty: {salary_reason} is below preference")
+        elif salary_min >= minimum_salary_gbp:
+            score += 4
+            append_reason(reasons, f"salary fit: {salary_reason}")
+    return score
 
 
 def score_job(
@@ -585,6 +750,21 @@ def score_job(
     current_run_ts: str,
     lockouts: list[str],
 ) -> dict[str, object]:
+    """
+    Score a job item and generate a candidate profile based on skills, role fit, and preferences.
+
+    Args:
+        item: The job posting (requires 'title', 'description', 'link').
+        source_label: The source of the job posting (e.g. greenhouse).
+        profile: Dictionary containing user target profiles and preferences.
+        search_config: Config for search logic and company overrides.
+        feedback_profile: Adaptive feedback model adjusting scores based on user feedback.
+        current_run_ts: Timestamp to assign to generated candidates.
+        lockouts: List of strings/expressions for lockout rules.
+
+    Returns:
+        A dict containing qualification status, score, reasons, and a candidate object.
+    """
     raw_title = clean_text(item["title"])
     raw_desc = clean_text(item["description"])
     role_title, company = split_title_and_company(raw_title)
@@ -613,36 +793,20 @@ def score_job(
         return {"qualified": False, "score": 0, "reasons": reasons}
     score += int(company_preferences["score_delta"])
 
-    target_title_matches = find_pattern_matches(normalized_title, target_role_entries, limit=3)
-    if target_title_matches:
-        score += min(48, 34 + 7 * (len(target_title_matches) - 1))
-        append_reason(reasons, f"target role in title: {', '.join(target_title_matches)}")
-    target_desc_matches = [
-        match for match in find_pattern_matches(normalized_desc, target_role_entries, limit=3) if match not in target_title_matches
-    ]
-    if target_desc_matches:
-        score += min(18, 9 * len(target_desc_matches))
-        append_reason(reasons, f"target role in description: {', '.join(target_desc_matches)}")
+    tr_score, target_title_matches = _calculate_target_role_score(
+        normalized_title, normalized_desc, target_role_entries, reasons
+    )
+    score += tr_score
 
-    skill_title_matches = find_pattern_matches(normalized_title, skill_entries, limit=4)
-    if skill_title_matches:
-        score += min(18, 6 * len(skill_title_matches))
-        append_reason(reasons, f"skills in title: {', '.join(skill_title_matches)}")
-    skill_desc_matches = [
-        match for match in find_pattern_matches(normalized_desc, skill_entries, limit=5) if match not in skill_title_matches
-    ]
-    if skill_desc_matches:
-        score += min(20, 4 * len(skill_desc_matches))
-        append_reason(reasons, f"skills in description: {', '.join(skill_desc_matches)}")
+    sk_score, skill_title_matches, skill_desc_matches = _calculate_skill_score(
+        normalized_title, normalized_desc, skill_entries, reasons
+    )
+    score += sk_score
 
-    competency_matches = find_pattern_matches(normalized_full_text, competency_entries, limit=4)
-    if competency_matches:
-        score += min(12, 3 * len(competency_matches))
-        append_reason(reasons, f"competencies matched: {', '.join(competency_matches)}")
+    comp_score, competency_matches = _calculate_competency_score(normalized_full_text, competency_entries, reasons)
+    score += comp_score
 
-    score += apply_weight_map(normalized_title, POSITIVE_TITLE_WEIGHTS, reasons, "title boost")
-    score -= apply_weight_map(normalized_title, NEGATIVE_TITLE_WEIGHTS, reasons, "title penalty")
-    score -= apply_weight_map(normalized_title, SENIORITY_PENALTIES, reasons, "seniority penalty")
+    score += _apply_title_weights(normalized_title, reasons)
 
     role_profile_match = evaluate_role_profile(normalized_title, normalized_desc, search_config)
     if role_profile_match:
@@ -652,25 +816,24 @@ def score_job(
             role_profile_reason_parts.append(f"title: {', '.join(role_profile_match['title_matches'])}")
         if role_profile_match["description_matches"]:
             role_profile_reason_parts.append(f"description: {', '.join(role_profile_match['description_matches'])}")
-        append_reason(reasons, f"role profile {role_profile_match['display_name']}: {'; '.join(role_profile_reason_parts)}")
+        append_reason(
+            reasons, f"role profile {role_profile_match['display_name']}: {'; '.join(role_profile_reason_parts)}"
+        )
     else:
-        role_profile_match = {"name": "", "display_name": "", "score_delta": 0, "title_matches": [], "description_matches": []}
+        role_profile_match = {
+            "name": "",
+            "display_name": "",
+            "score_delta": 0,
+            "title_matches": [],
+            "description_matches": [],
+        }
 
-    salary_range = extract_salary_range_gbp(f"{raw_title} {raw_desc}")
-    minimum_salary_gbp = int(prefs.get("minimum_salary_gbp", 0) or 0)
-    if salary_range and minimum_salary_gbp:
-        salary_min = safe_int(salary_range["min_gbp"])
-        salary_max = safe_int(salary_range["max_gbp"])
-        salary_reason = format_salary_info_for_reason(salary_range)
-        if salary_max < minimum_salary_gbp:
-            score -= 18
-            append_reason(reasons, f"salary penalty: {salary_reason} is below preference")
-        elif salary_min >= minimum_salary_gbp:
-            score += 4
-            append_reason(reasons, f"salary fit: {salary_reason}")
+    score += _apply_salary_preferences(raw_title, raw_desc, prefs, reasons)
 
     title_alignment_matches = dedupe_preserving_order(target_title_matches + role_profile_match["title_matches"])
-    skill_focus_phrases = build_focus_phrases(skill_title_matches, skill_desc_matches, competency_matches, role_profile_match["description_matches"])
+    skill_focus_phrases = build_focus_phrases(
+        skill_title_matches, skill_desc_matches, competency_matches, role_profile_match["description_matches"]
+    )
     feedback_keywords = dedupe_preserving_order(build_focus_phrases(title_alignment_matches, skill_focus_phrases))[:8]
     score = apply_feedback_adjustments(score, reasons, source_label, feedback_keywords, feedback_profile)
     application_materials = build_application_materials(
@@ -714,7 +877,7 @@ def score_job(
 def queue_pending_alerts(alert_state: dict[str, object], matches: list[dict[str, object]]) -> int:
     pending_alerts = alert_state["pending_alerts"]
     pending_links = {str(alert["link"]) for alert in pending_alerts}
-    alerted_links = set(str(link) for link in alert_state["alerted_links"])
+    alerted_links = {str(link) for link in alert_state["alerted_links"]}
     queued = 0
     for match in matches:
         link = str(match["link"])
@@ -773,7 +936,9 @@ def telegram_api_request(
             "Content-Type": "application/x-www-form-urlencoded",
         },
     )
-    effective_timeout = FETCH_TIMEOUT_SECONDS if request_timeout_seconds is None else max(1.0, float(request_timeout_seconds))
+    effective_timeout = (
+        FETCH_TIMEOUT_SECONDS if request_timeout_seconds is None else max(1.0, float(request_timeout_seconds))
+    )
     try:
         with urlopen(request, timeout=effective_timeout) as response:
             body = response.read().decode("utf-8", errors="replace")
@@ -930,12 +1095,16 @@ def sync_application_outcomes(applications_state: dict[str, object], observed_at
     for application in applications_state["applications"]:
         status = normalize_application_status(application.get("status", "new"))
         application["status"] = status
-        fallback_observed_utc = clean_text(str(application.get("last_seen_utc", ""))) or clean_text(
-            str(application.get("first_seen_utc", ""))
-        ) or observed_at_utc
+        fallback_observed_utc = (
+            clean_text(str(application.get("last_seen_utc", "")))
+            or clean_text(str(application.get("first_seen_utc", "")))
+            or observed_at_utc
+        )
         if not clean_text(str(application.get("status_observed_utc", ""))):
             application["status_observed_utc"] = fallback_observed_utc
-        if status in {"applied", "interview", "rejected"} and not clean_text(str(application.get("applied_at_utc", ""))):
+        if status in {"applied", "interview", "rejected"} and not clean_text(
+            str(application.get("applied_at_utc", ""))
+        ):
             application["applied_at_utc"] = fallback_observed_utc
         if status == "interview" and not clean_text(str(application.get("interviewed_at_utc", ""))):
             application["interviewed_at_utc"] = fallback_observed_utc
@@ -1009,7 +1178,7 @@ def compute_feedback_adjustment(counts: dict[str, int], max_adjustment: int, min
     applied_rate = counts.get("applied", 0) / total
     rejected_rate = counts.get("rejected", 0) / total
     raw_score = interview_rate + (applied_rate * 0.2) - (rejected_rate * 0.7)
-    return max(-max_adjustment, min(max_adjustment, int(round(raw_score * max_adjustment))))
+    return max(-max_adjustment, min(max_adjustment, round(raw_score * max_adjustment)))
 
 
 def build_feedback_metrics(
@@ -1019,7 +1188,7 @@ def build_feedback_metrics(
     cleanup_summary: dict[str, object],
 ) -> dict[str, object]:
     feedback_settings = search_config["feedback"]
-    status_counts = {status: 0 for status in sorted(APPLICATION_STATUSES)}
+    status_counts = dict.fromkeys(sorted(APPLICATION_STATUSES), 0)
     outcome_sample_count = 0
     source_counters: dict[str, dict[str, int]] = {}
     keyword_counters: dict[str, dict[str, int]] = {}
@@ -1030,9 +1199,7 @@ def build_feedback_metrics(
         if status not in OUTCOME_RELEVANT_STATUSES:
             continue
         outcome_sample_count += 1
-        source_values = [
-            normalize_text(value) for value in application.get("sources", []) if normalize_text(value)
-        ]
+        source_values = [normalize_text(value) for value in application.get("sources", []) if normalize_text(value)]
         if not source_values and normalize_text(application.get("source", "")):
             source_values = [normalize_text(application.get("source", ""))]
         for source_key in dedupe_preserving_order(source_values):
@@ -1046,7 +1213,9 @@ def build_feedback_metrics(
             keyword_counters.setdefault(keyword, fresh_feedback_counts())
             increment_feedback_counts(keyword_counters[keyword], status)
 
-    def build_metric_rows(counters: dict[str, dict[str, int]], max_adjustment: int, label_resolver) -> list[dict[str, object]]:
+    def build_metric_rows(
+        counters: dict[str, dict[str, int]], max_adjustment: int, label_resolver
+    ) -> list[dict[str, object]]:
         rows = []
         for key, counts in counters.items():
             adjustment = compute_feedback_adjustment(
@@ -1109,10 +1278,14 @@ def build_feedback_metrics(
         "keyword_limit": int(feedback_settings["keyword_limit"]),
         "max_keyword_adjustment": int(feedback_settings["max_keyword_adjustment"]),
         "source_adjustments": {
-            row["key"]: int(row["recommended_adjustment"]) for row in source_metrics if int(row["recommended_adjustment"]) != 0
+            row["key"]: int(row["recommended_adjustment"])
+            for row in source_metrics
+            if int(row["recommended_adjustment"]) != 0
         },
         "keyword_adjustments": {
-            row["key"]: int(row["recommended_adjustment"]) for row in keyword_metrics if int(row["recommended_adjustment"]) != 0
+            row["key"]: int(row["recommended_adjustment"])
+            for row in keyword_metrics
+            if int(row["recommended_adjustment"]) != 0
         },
     }
 
@@ -1144,14 +1317,20 @@ def _merge_application_record(
         existing["company_control"] = "priority"
     existing["role_profile"] = application["role_profile"] or clean_text(str(existing.get("role_profile", "")))
     existing["score"] = max(safe_int(existing.get("score", 0), 0), application["score"])
-    existing["best_score"] = max(safe_int(existing.get("best_score", 0), 0), application["best_score"], existing["score"])
+    existing["best_score"] = max(
+        safe_int(existing.get("best_score", 0), 0), application["best_score"], existing["score"]
+    )
     existing["reasons"] = dedupe_preserving_order(application["reasons"] + list(existing.get("reasons", [])))[:6]
-    existing["why_this_fits"] = dedupe_preserving_order(application["why_this_fits"] + list(existing.get("why_this_fits", [])))[:3]
+    existing["why_this_fits"] = dedupe_preserving_order(
+        application["why_this_fits"] + list(existing.get("why_this_fits", []))
+    )[:3]
     existing["resume_bullet_suggestions"] = dedupe_preserving_order(
         application["resume_bullet_suggestions"] + list(existing.get("resume_bullet_suggestions", []))
     )[:3]
     existing["intro_message"] = application["intro_message"] or clean_text(str(existing.get("intro_message", "")))
-    existing["application_ready"] = bool(parse_bool(existing.get("application_ready", False), False) or application["application_ready"])
+    existing["application_ready"] = bool(
+        parse_bool(existing.get("application_ready", False), False) or application["application_ready"]
+    )
     existing["feedback_keywords"] = dedupe_preserving_order(
         application["feedback_keywords"] + list(existing.get("feedback_keywords", []))
     )[:8]
@@ -1171,7 +1350,9 @@ def _merge_application_record(
     existing["first_seen_utc"] = clean_text(str(existing.get("first_seen_utc", ""))) or seen_at_utc
     existing["last_seen_utc"] = seen_at_utc
     existing["match_count"] = max(1, safe_int(existing.get("match_count", 1), 1) + 1)
-    existing["fingerprints"] = dedupe_preserving_order(list(existing.get("fingerprints", [])) + application["fingerprints"])
+    existing["fingerprints"] = dedupe_preserving_order(
+        list(existing.get("fingerprints", [])) + application["fingerprints"]
+    )
 
 
 def find_application_record(
@@ -1181,10 +1362,10 @@ def find_application_record(
 ) -> dict[str, object] | None:
     fingerprint_set = set(fingerprints)
     for application in applications:
-        existing_links = set(str(item) for item in application.get("links", []))
+        existing_links = {str(item) for item in application.get("links", [])}
         if link and link in existing_links:
             return application
-        existing_fingerprints = set(str(item) for item in application.get("fingerprints", []))
+        existing_fingerprints = {str(item) for item in application.get("fingerprints", [])}
         if fingerprint_set and existing_fingerprints.intersection(fingerprint_set):
             return application
     return None
@@ -1204,7 +1385,9 @@ def upsert_application_record(
     )
     if application is None:
         return False
-    existing = find_application_record(applications_state["applications"], application["fingerprints"], application["link"])
+    existing = find_application_record(
+        applications_state["applications"], application["fingerprints"], application["link"]
+    )
     if existing is None:
         applications_state["applications"].append(application)
         applications_state["applications"] = applications_state["applications"][-MAX_APPLICATION_RECORDS:]
@@ -1270,7 +1453,9 @@ def seed_applications_from_existing_jobs(
 
 
 def rank_application_for_digest(application: dict[str, object], current_dt: datetime) -> tuple[int, float]:
-    last_seen_dt = parse_iso_utc(application.get("last_seen_utc", "")) or parse_iso_utc(application.get("first_seen_utc", ""))
+    last_seen_dt = parse_iso_utc(application.get("last_seen_utc", "")) or parse_iso_utc(
+        application.get("first_seen_utc", "")
+    )
     age_hours = 9999.0
     freshness_bonus = 0.0
     if last_seen_dt is not None:
@@ -1279,14 +1464,14 @@ def rank_application_for_digest(application: dict[str, object], current_dt: date
     company_control = normalize_company_control(application.get("company_control", "none"))
     status = normalize_application_status(application.get("status", "new"))
     status_bonus = {"new": 8, "reviewed": 4, "applied": 1, "interview": 2, "rejected": -50}.get(status, 0)
-    company_bonus = 16 if parse_bool(application.get("shortlisted", False), False) else 8 if company_control == "whitelist" else 0
-    rank = int(
-        round(
-            max(safe_int(application.get("score", 0), 0), safe_int(application.get("best_score", 0), 0))
-            + freshness_bonus
-            + company_bonus
-            + status_bonus
-        )
+    company_bonus = (
+        16 if parse_bool(application.get("shortlisted", False), False) else 8 if company_control == "whitelist" else 0
+    )
+    rank = round(
+        max(safe_int(application.get("score", 0), 0), safe_int(application.get("best_score", 0), 0))
+        + freshness_bonus
+        + company_bonus
+        + status_bonus
     )
     return rank, age_hours
 
@@ -1307,7 +1492,8 @@ def build_daily_digest_snapshot(
         items.append(
             {
                 "title": str(application["title"]),
-                "company": clean_text(str(application.get("company", ""))) or clean_text(str(application.get("source", ""))),
+                "company": clean_text(str(application.get("company", "")))
+                or clean_text(str(application.get("source", ""))),
                 "link": str(application["link"]),
                 "status": status,
                 "score": max(safe_int(application.get("score", 0), 0), safe_int(application.get("best_score", 0), 0)),
@@ -1381,7 +1567,9 @@ def format_daily_digest_messages(
 
     for block in item_blocks:
         block_length = len(block) + 2
-        if current_page and (len(current_page) >= page_size or current_length + block_length + header_budget > max_chars):
+        if current_page and (
+            len(current_page) >= page_size or current_length + block_length + header_budget > max_chars
+        ):
             pages.append(current_page)
             current_page = []
             current_length = 0
@@ -1442,7 +1630,10 @@ def build_daily_digest_keyboard(session_id: str, page_index: int, total_pages: i
         "inline_keyboard": [
             [
                 {"text": "◀ Prev", "callback_data": _build_digest_callback_data(session_id, previous_target)},
-                {"text": f"{page_index + 1}/{total_pages}", "callback_data": _build_digest_callback_data(session_id, _NOOP_PAGE_TOKEN)},
+                {
+                    "text": f"{page_index + 1}/{total_pages}",
+                    "callback_data": _build_digest_callback_data(session_id, _NOOP_PAGE_TOKEN),
+                },
                 {"text": "Next ▶", "callback_data": _build_digest_callback_data(session_id, next_target)},
             ]
         ]
