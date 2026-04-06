@@ -223,18 +223,8 @@ FEEDS = [
         "min_interval_seconds": 1800,
     },
     {
-        "name": "wwr_programming",
-        "url": "https://weworkremotely.com/categories/remote-programming-jobs.rss",
-        "min_interval_seconds": 900,
-    },
-    {
-        "name": "wwr_devops",
-        "url": "https://weworkremotely.com/categories/remote-devops-sysadmin-jobs.rss",
-        "min_interval_seconds": 900,
-    },
-    {
-        "name": "wwr_management_finance",
-        "url": "https://weworkremotely.com/categories/remote-management-and-finance-jobs.rss",
+        "name": "wwr_all",
+        "url": "https://weworkremotely.com/remote-jobs.rss",
         "min_interval_seconds": 900,
     },
     {
@@ -248,37 +238,60 @@ FEEDS = [
         "min_interval_seconds": 3600,
     },
     {
-        "name": "jobscollider_software",
-        "url": "https://jobscollider.com/remote-software-development-jobs.rss",
+        "name": "remotefirstjobs_all",
+        "url": "https://remotefirstjobs.com/rss/jobs.rss",
         "min_interval_seconds": 3600,
     },
     {
-        "name": "jobscollider_devops",
-        "url": "https://jobscollider.com/remote-devops-jobs.rss",
+        "name": "python_org_jobs",
+        "url": "https://www.python.org/jobs/feed/rss/",
+        "context_terms": "london uk united kingdom hybrid office",
         "min_interval_seconds": 3600,
     },
     {
-        "name": "jobscollider_finance_legal",
-        "url": "https://jobscollider.com/remote-finance-legal-jobs.rss",
+        "name": "jobs_ac_uk_tech_london",
+        "url": "https://www.jobs.ac.uk/jobs/london?format=rss",
+        # Universities hire a massive amount of IT/Tech staff in London, usually hybrid/office.
+        "context_terms": "tech support developer engineer hybrid in-office",
         "min_interval_seconds": 3600,
     },
     {
-        "name": "jobicy_fintech_uk_europe",
+        "name": "google_alerts_corporate",
+        "url": "https://www.google.com/alerts/feeds/09910730576829865385/10714127524543454759", 
+        "min_interval_seconds": 3600,
+    },
+    {
+        "name": "google_alerts_core_it_support",
+        "url": "https://www.google.com/alerts/feeds/09910730576829865385/13401058173831861136", 
+        "min_interval_seconds": 3600,
+    },
+    {
+        "name": "google_alerts_infrastructure",
+        "url": "https://www.google.com/alerts/feeds/09910730576829865385/15611871513157400765", 
+        "min_interval_seconds": 3600,
+    },
+    {
+        "name": "google_alerts_dev_adjacent",
+        "url": "https://www.google.com/alerts/feeds/09910730576829865385/17528292640163305738", 
+        "min_interval_seconds": 3600,
+    },
+    {
+        "name": "jobicy_fintech_uk",
         "url": (
             "https://jobicy.com/feed/job_feed"
-            "?job_categories=engineering,technical-suppor,accounting-finance"
+            "?job_categories=engineering,technical-support,accounting-finance"
             "&search_keywords=fintech"
-            "&search_region=uk,europe"
+            "&search_region=uk"
         ),
         "min_interval_seconds": 3600,
     },
     {
-        "name": "jobicy_payments_uk_europe",
+        "name": "jobicy_payments_uk",
         "url": (
             "https://jobicy.com/feed/job_feed"
-            "?job_categories=engineering,technical-suppor,accounting-finance"
+            "?job_categories=engineering,technical-support,accounting-finance"
             "&search_keywords=payments"
-            "&search_region=uk,europe"
+            "&search_region=uk"
         ),
         "min_interval_seconds": 3600,
     },

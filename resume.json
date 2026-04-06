@@ -15,7 +15,7 @@
       "Systems Administrator"
     ],
     "preferences": {
-      "remote": false,
+      "remote": true,
       "hybrid": true,
       "onsite": true,
       "preferred_locations": [
