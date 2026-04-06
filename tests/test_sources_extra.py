@@ -1,6 +1,7 @@
 import tempfile
 import unittest
 from pathlib import Path
+from xml.etree import ElementTree
 
 from jobbot import sources
 
@@ -362,7 +363,7 @@ class ParseFeedItemsTestCase(unittest.TestCase):
         self.assertIsInstance(items, list)
 
     def test_raises_when_totally_unparseable(self) -> None:
-        with self.assertRaises(Exception):
+        with self.assertRaises(ElementTree.ParseError):
             sources.parse_feed_items("<<<not xml at all>>>")
 
 

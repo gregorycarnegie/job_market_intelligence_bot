@@ -182,7 +182,7 @@ class EvaluateLocationFitTestCase(unittest.TestCase):
         self.assertIn("relocation", reason)
 
     def test_remote_pref_fits_remote_job(self) -> None:
-        ok, reason = matching.evaluate_location_fit(
+        ok, _reason = matching.evaluate_location_fit(
             "remote position anywhere in the uk", ["uk"], {"remote": True}, []
         )
         self.assertTrue(ok)
@@ -195,19 +195,19 @@ class EvaluateLocationFitTestCase(unittest.TestCase):
         self.assertIn("lockout", reason)
 
     def test_hybrid_pref_fits_local_hybrid(self) -> None:
-        ok, reason = matching.evaluate_location_fit(
+        ok, _reason = matching.evaluate_location_fit(
             "hybrid london role", ["london"], {"hybrid": True}, []
         )
         self.assertTrue(ok)
 
     def test_onsite_pref_fits_local_onsite(self) -> None:
-        ok, reason = matching.evaluate_location_fit(
+        ok, _reason = matching.evaluate_location_fit(
             "in office london position", ["london"], {"onsite": True}, []
         )
         self.assertTrue(ok)
 
     def test_no_match_rejected(self) -> None:
-        ok, reason = matching.evaluate_location_fit(
+        ok, _reason = matching.evaluate_location_fit(
             "dubai office based role", ["london"], {"onsite": True}, []
         )
         self.assertFalse(ok)
@@ -379,8 +379,14 @@ class DeliverPendingAlertsTestCase(unittest.TestCase):
     def test_stops_on_send_failure(self) -> None:
         alert_state = {
             "pending_alerts": [
-                {"link": "https://example.com/job/1", "title": "A", "score": 50, "reasons": [], "company": "", "shortlisted": False, "company_control": "none", "role_profile": "", "source": ""},
-                {"link": "https://example.com/job/2", "title": "B", "score": 50, "reasons": [], "company": "", "shortlisted": False, "company_control": "none", "role_profile": "", "source": ""},
+                {
+                    "link": "https://example.com/job/1", "title": "A", "score": 50, "reasons": [],
+                    "company": "", "shortlisted": False, "company_control": "none", "role_profile": "", "source": "",
+                },
+                {
+                    "link": "https://example.com/job/2", "title": "B", "score": 50, "reasons": [],
+                    "company": "", "shortlisted": False, "company_control": "none", "role_profile": "", "source": "",
+                },
             ],
             "alerted_links": [],
         }
@@ -412,7 +418,7 @@ class ParseDigestCallbackDataTestCase(unittest.TestCase):
         self.assertIsNone(page_token)
 
     def test_returns_none_for_empty_session_id(self) -> None:
-        session_id, page_token = matching.parse_digest_callback_data("dg::1")
+        session_id, _page_token = matching.parse_digest_callback_data("dg::1")
         self.assertIsNone(session_id)
 
 

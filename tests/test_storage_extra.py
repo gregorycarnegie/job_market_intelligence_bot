@@ -182,7 +182,7 @@ class FindApplicationByLinkOrFingerprintsTestCase(StorageTestBase):
 
     def test_finds_by_fingerprint(self) -> None:
         self._save_app("https://example.com/job/2", ["fp-unique"])
-        found_link, found = jobbot_storage.find_application_by_link_or_fingerprints(
+        _found_link, found = jobbot_storage.find_application_by_link_or_fingerprints(
             self.db, "https://example.com/job/DIFFERENT", ["fp-unique"]
         )
         self.assertIsNotNone(found)

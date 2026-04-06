@@ -1019,7 +1019,9 @@ class AdzunaSource(Source):
                 company_obj = job.get("company")
                 company = clean_text(str(company_obj.get("display_name", "") if isinstance(company_obj, dict) else ""))
                 location_obj = job.get("location")
-                location = clean_text(str(location_obj.get("display_name", "") if isinstance(location_obj, dict) else ""))
+                location = clean_text(
+                    str(location_obj.get("display_name", "") if isinstance(location_obj, dict) else "")
+                )
                 salary = format_provider_salary_text(
                     job.get("salary_min"),
                     job.get("salary_max"),
