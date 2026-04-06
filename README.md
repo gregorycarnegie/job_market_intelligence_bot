@@ -4,9 +4,8 @@ Automated Search for Job Listings in RSS Feeds with self-hosted OpenClaw running
 
 ## 📽️ Step By Step OpenClaw Video Tutorial
 
-<a href="https://youtu.be/ehfTs0wdW5g">
-<img width="600px" src="https://github.com/user-attachments/assets/e1322230-b694-4b4c-a2cf-f2b5abc383d4">
-</a>
+[![Step By Step OpenClaw Video Tutorial](https://github.com/user-attachments/assets/e1322230-b694-4b4c-a2cf-f2b5abc383d4)](https://youtu.be/ehfTs0wdW5g)
+
 <br>
 Watch Full Video Here: https://youtu.be/ehfTs0wdW5g
 
@@ -33,9 +32,7 @@ This repository contains several files, part of the job market intelligence mech
 - `borderline_matches.json`: runtime snapshot of near-threshold jobs that are worth optional AI review instead of sending the entire feed to OpenClaw.
 - `feedback_metrics.json`: runtime snapshot of outcome tracking, learned source/keyword adjustments, and cleanup activity.
 
-<br>
-<img width="1920" alt="Screenshot of Finished Project - job alerts scheduled and coming in on WhatsApp" src="https://github.com/user-attachments/assets/e19573a1-a861-467b-8fc5-5657afaa1d19" />
-<br>
+![Screenshot of Finished Project - job alerts scheduled and coming in on WhatsApp](https://github.com/user-attachments/assets/e19573a1-a861-467b-8fc5-5657afaa1d19)
 <br>
 
 ## 🧰 Requirements
@@ -46,7 +43,7 @@ This repository contains several files, part of the job market intelligence mech
 - SSH access to your VPS (set up a root password in advance).
 - Python 3 installed on the server (automatic if you use the One Click Deploy image - instructions below).
   Python 3.10 or newer is recommended.
-- <a href="https://git-scm.com/">Git</a> installed on local machine.
+- [Git](https://git-scm.com/) installed on local machine.
 
 ## 📚 Instructions
 
@@ -148,9 +145,7 @@ You can then verify that everything works by looking at the log file that our pr
 cat output.log
 ```
 
-<br>
-<img width="1920" alt="Screenshot of initial output.log output - expected to find several jobs matching your skills" src="https://github.com/user-attachments/assets/2d2b2261-f5f1-47e6-998d-4b02f1b47657" />
-<br>
+![Screenshot of initial output.log output - expected to find several jobs matching your skills](https://github.com/user-attachments/assets/2d2b2261-f5f1-47e6-998d-4b02f1b47657)
 <br>
 As well as verifying that data is being collected properly from both our Python files:
 ```
