@@ -6,8 +6,7 @@ Automated Search for Job Listings in RSS Feeds with self-hosted OpenClaw running
 
 [![Step By Step OpenClaw Video Tutorial](https://github.com/user-attachments/assets/e1322230-b694-4b4c-a2cf-f2b5abc383d4)](https://youtu.be/ehfTs0wdW5g)
 
-<br>
-Watch Full Video Here: https://youtu.be/ehfTs0wdW5g
+Watch Full Video Here: <https://youtu.be/ehfTs0wdW5g>
 
 ## 👀 Overview
 
@@ -33,7 +32,6 @@ This repository contains several files, part of the job market intelligence mech
 - `feedback_metrics.json`: runtime snapshot of outcome tracking, learned source/keyword adjustments, and cleanup activity.
 
 ![Screenshot of Finished Project - job alerts scheduled and coming in on WhatsApp](https://github.com/user-attachments/assets/e19573a1-a861-467b-8fc5-5657afaa1d19)
-<br>
 
 ## 🧰 Requirements
 
@@ -52,7 +50,7 @@ Please follow these instructions, and if you get stuck - check out the video tut
 ### 1. Adjust resume.json 📜
 
 Adjust resume.json to your own information. This will give OpenClaw plenty of background about your skills, experience and requirements.
-<br>
+
 Special fields to update (do not remove! they are used in the python scripts):
 
 - `location` - city, country
@@ -60,28 +58,27 @@ Special fields to update (do not remove! they are used in the python scripts):
 - `preferences` - remote, hybrid, preferred locations, minimum salary, relocation
 - `education`
 - `technical_skills` - skills
-<br>
 
 You can remove or add any other fields, the more context you provide to OpenClaw - the better it can match jobs to you.
 
 ### 2. Deploy OpenClaw VPS 🚀
 
 To ensure your AI agent is running 24/7 we must deploy it just like deploying a website.
-<br>
+
 If our website is running and fully operational even when our computer is off - then so should our OpenClaw agent.
-<br>
+
 For this, we will deploy a self-hosted OpenClaw instance, running on a virtual private server.
-<br>
+
 I used Hostinger's **One Click Deploy** Docker image, you can find it here:
-<br>
+
 <https://www.hostinger.com/phyton>
-<br>
+
 Use my code **PYTHON** for 10% discount on yearly/bi-yearly plans
 
 ### 3. Connect OpenClaw to WhatsApp 📨
 
 In your OpenClaw interface navigate to "Channels" tab and connect your WhatsApp account by scanning the QR code.
-<br>
+
 Once WhatsApp is connected, try sending a message to yourself (your own phone number) and if OpenClaw replies - everything worked.
 
 ### 4. Find the Location of Your OpenClaw Workspace
@@ -131,7 +128,7 @@ scp pull_jobs.py pull_desc.py telegram_callback_worker.py exec_loop.sh resume.js
 ### 6. Run exec_loop.sh ➿
 
 Give yourself permissions to execute the loop. It will keep the Telegram callback worker alive in the background while running the two main Python scripts once every 60 seconds.
-<br>
+
 We do so using Nohup (No hangup) which ensures the script is running non-stop.
 
 ```bash
@@ -146,9 +143,10 @@ cat output.log
 ```
 
 ![Screenshot of initial output.log output - expected to find several jobs matching your skills](https://github.com/user-attachments/assets/2d2b2261-f5f1-47e6-998d-4b02f1b47657)
-<br>
+
 As well as verifying that data is being collected properly from both our Python files:
-```
+
+```bash
 cat jobs.csv
 cat desc.json
 ```
@@ -158,7 +156,7 @@ If both files contain data - everything works great!
 ### 6.5 Recommended: Direct Telegram Alerts
 
 The repo can now send Telegram alerts directly from Python, which is cheaper and more reliable than using OpenClaw for the hot alert path.
-<br>
+
 Create a `.env` file from `.env.example` and fill in your bot token and chat ID:
 
 ```bash
@@ -173,7 +171,7 @@ Generated runtime files:
 - `seen_jobs_state.json` stores review fingerprints so already-seen non-matches and cross-source duplicates can be skipped.
 - `applications.json` stores the persistent application tracker with statuses like `new`, `reviewed`, `applied`, `rejected`, and `interview`.
 - `daily_digest.json` stores the current ranked daily digest snapshot based on score, freshness, and employer priority. When Telegram delivery is enabled, the digest is sent as an interactive paged message with Telegram inline `Prev` / `Next` buttons, and the worker edits the same message in place as users navigate.
-- `application_briefs.json` stores the top application-ready jobs with generated “why this fits” notes, resume bullet suggestions, and intro-message drafts.
+- `application_briefs.json` stores the top application-ready jobs with generated "why this fits" notes, resume bullet suggestions, and intro-message drafts.
 - `borderline_matches.json` stores near-threshold candidates for optional AI review.
 - `feedback_metrics.json` stores outcome summaries, source/keyword performance, recommended score adjustments, and cleanup information.
 
@@ -265,21 +263,21 @@ The current code layout is intentionally split so that:
 ### 7. Manually Set Up Cron Jobs in OpenClaw UI ⏰
 
 OpenClaw is now optional.
-<br>
+
 If you still want OpenClaw as a secondary relay for `desc.json`, navigate to the "Cron Jobs" tab and set up a manual task named `job_alerts` that runs every 1 minute.
-<br>
+
 Use the prompt from `openclaw_job_alerts_prompt.txt` as the full task description.
-<br>
+
 This stricter prompt matters: if you use a vague description, OpenClaw may send status updates like "no new matches" instead of staying silent when there is nothing to alert on.
-<br>
+
 It relies on the batch `time` already stored in `desc.json`. The OpenClaw prompt does not use `alerts_state.json`; that file is for the direct Python-to-Telegram alert path.
-<br>
+
 `pull_desc.py` continuously replaces `desc.json` with only the latest matched batch, so slower cron intervals can miss intermediate batches.
 
 If you want to use OpenClaw for higher-value work only, point it at the small generated files instead of the raw feed:
 
 - `borderline_matches.json` for borderline-fit review.
-- `application_briefs.json` for resume tailoring, “why this fits” refinement, and message drafting.
+- `application_briefs.json` for resume tailoring, "why this fits" refinement, and message drafting.
 
 That keeps AI usage focused on a small number of high-value jobs instead of spending credits on every feed poll.
 
