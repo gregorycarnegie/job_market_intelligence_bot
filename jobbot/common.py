@@ -332,6 +332,15 @@ PatternEntry = tuple[str, re.Pattern[str]]
 
 
 def clean_text(text: str) -> str:
+    """
+    Remove HTML tags and extra whitespace from text.
+
+    Args:
+        text (str): The raw text to clean.
+
+    Returns:
+        str: The cleaned string.
+    """
     if not text:
         return ""
     clean = re.sub(r"<[^>]+>", " ", html.unescape(text))
@@ -339,10 +348,28 @@ def clean_text(text: str) -> str:
 
 
 def normalize_text(text: str) -> str:
+    """
+    Clean text and convert it to lowercase for consistent matching.
+
+    Args:
+        text (str): The raw text to normalize.
+
+    Returns:
+        str: The cleaned, lowercase string.
+    """
     return " ".join(clean_text(text).lower().split())
 
 
 def strip_cdata(text: str) -> str:
+    """
+    Remove CDATA wrappers from XML/RSS strings.
+
+    Args:
+        text (str): The text potentially containing CDATA.
+
+    Returns:
+        str: The plain text without CDATA tags.
+    """
     stripped = text.strip()
     if stripped.startswith("<![CDATA[") and stripped.endswith("]]>"):
         return stripped[9:-3]
@@ -354,6 +381,15 @@ def strip_tags(text: str) -> str:
 
 
 def compile_skill_pattern(skill: str) -> re.Pattern[str] | None:
+    """
+    Create a compiled regex pattern for matching a specific skill as a whole word.
+
+    Args:
+        skill (str): The skill text to match.
+
+    Returns:
+        re.Pattern | None: The compiled regex, or None if the input is empty.
+    """
     normalized_skill = normalize_text(skill)
     if not normalized_skill:
         return None
@@ -367,6 +403,15 @@ def contains_phrase(text: str, phrase: str) -> bool:
 
 
 def build_pattern_entries(values: list[str]) -> list[PatternEntry]:
+    """
+    Convert a list of string skills/roles into a list of pre-compiled regex PatternEntries.
+
+    Args:
+        values (list[str]): The strings to convert.
+
+    Returns:
+        list[PatternEntry]: A list of tuples containing the normalized string and its regex pattern.
+    """
     entries: list[PatternEntry] = []
     seen = set()
     for value in values:
@@ -393,6 +438,16 @@ def append_reason(reasons: list[str], message: str) -> None:
 
 
 def safe_int(value: object, default: int = 0) -> int:
+    """
+    Safely convert an object to an integer, falling back to a default on failure.
+
+    Args:
+        value (object): The item to convert.
+        default (int): Default to return if conversion fails.
+
+    Returns:
+        int: The parsed integer or the default.
+    """
     try:
         return int(value)
     except (TypeError, ValueError):
@@ -400,6 +455,16 @@ def safe_int(value: object, default: int = 0) -> int:
 
 
 def parse_bool(value: object, default: bool = False) -> bool:
+    """
+    Parse a boolean from various string or numeric representations.
+
+    Args:
+        value (object): The value to parse (e.g., '1', 'true', 'no').
+        default (bool): The default if parsing is ambiguous.
+
+    Returns:
+        bool: The evaluated boolean state.
+    """
     if isinstance(value, bool):
         return value
     if isinstance(value, (int, float)):
@@ -413,6 +478,15 @@ def parse_bool(value: object, default: bool = False) -> bool:
 
 
 def dedupe_preserving_order(values: list[str]) -> list[str]:
+    """
+    Remove duplicates from a list of strings while preserving the original insertion order.
+
+    Args:
+        values (list[str]): The incoming strings.
+
+    Returns:
+        list[str]: The deduped list.
+    """
     unique_values = []
     seen = set()
     for value in values:
@@ -517,6 +591,15 @@ def looks_like_job_title(text: str) -> bool:
 
 
 def normalize_company_name(company: str) -> str:
+    """
+    Filter out common corporate suffixes (Ltd, Inc, LLC, etc.) to standardize company names.
+
+    Args:
+        company (str): The raw company name.
+
+    Returns:
+        str: The normalized company name.
+    """
     normalized = normalize_text(company)
     normalized = re.sub(
         r"\b(ltd|limited|plc|inc|llc|gmbh|corp|corporation|company|co)\b",
@@ -535,7 +618,7 @@ def split_title_and_company(title: str) -> tuple[str, str]:
         ("at", r"\s+at\s+"),
         ("@", r"\s+@\s+"),
         ("pipe", r"\s+\|\s+"),
-        ("dash", r"\s+[-–—]\s+"),
+        ("dash", r"\s+[-–—]\s+"),  # noqa: RUF001
         ("colon", r":\s+"),
     ]
 
@@ -562,6 +645,18 @@ def split_title_and_company(title: str) -> tuple[str, str]:
 
 
 def build_review_fingerprints(title: str, description: str, link: str) -> list[str]:
+    """
+    Generate unique fingerprints for a job listing to avoid duplicate reviews.
+    Utilizes link, role/company pair, and text as fallback markers.
+
+    Args:
+        title (str): The job title.
+        description (str): Full text description.
+        link (str): The job link.
+
+    Returns:
+        list[str]: The unique fingerprints representing this job.
+    """
     fingerprints = []
     normalized_link = normalize_link_for_fingerprint(link)
     if normalized_link:

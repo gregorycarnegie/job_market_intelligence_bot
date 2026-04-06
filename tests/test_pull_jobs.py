@@ -656,6 +656,7 @@ class PullJobsTestCase(unittest.TestCase):
             job_count = connection.execute("SELECT COUNT(*) FROM jobs").fetchone()[0]
             application_count = connection.execute("SELECT COUNT(*) FROM applications").fetchone()[0]
             feed_count = connection.execute("SELECT COUNT(*) FROM feed_state").fetchone()[0]
+        connection.close()
         self.assertEqual(job_count, 1)
         self.assertEqual(application_count, 1)
         self.assertEqual(feed_count, 1)

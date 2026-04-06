@@ -25,3 +25,12 @@ output.log
 seen_jobs_state.json
 
 .idea/
+
+# Test / coverage artefacts
+.coverage
+coverage.xml
+cov.txt
+pytest_error.txt
+
+# Build / packaging
+*.egg-info/

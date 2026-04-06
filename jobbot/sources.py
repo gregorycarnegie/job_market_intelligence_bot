@@ -64,6 +64,15 @@ def fetch_json(url: str, headers: dict[str, str] | None = None) -> object:
 
 
 def strip_html_noise(html_text: str) -> str:
+    """
+    Remove noisy HTML elements (script, style, noscript) from text.
+
+    Args:
+        html_text (str): The raw HTML string.
+
+    Returns:
+        str: The HTML with noisy elements removed.
+    """
     text = re.sub(r"<script\b[^>]*>.*?</script>", " ", html_text, flags=re.IGNORECASE | re.DOTALL)
     text = re.sub(r"<style\b[^>]*>.*?</style>", " ", text, flags=re.IGNORECASE | re.DOTALL)
     text = re.sub(r"<noscript\b[^>]*>.*?</noscript>", " ", text, flags=re.IGNORECASE | re.DOTALL)
@@ -88,6 +97,16 @@ def extract_meta_content(html_text: str, attr_name: str, attr_value: str) -> str
 
 
 def extract_page_title(html_text: str) -> str:
+    """
+    Attempt to extract the page title using best-effort metadata tags (OpenGraph, Twitter)
+    before falling back to <title> or <h1>.
+
+    Args:
+        html_text (str): The raw HTML document.
+
+    Returns:
+        str: The extracted page title, or an empty string if none is found.
+    """
     for extractor in (
         lambda text: extract_meta_content(text, "property", "og:title"),
         lambda text: extract_meta_content(text, "name", "twitter:title"),
@@ -108,6 +127,16 @@ def extract_page_title(html_text: str) -> str:
 
 
 def extract_plain_text_from_html(html_text: str, limit: int = 3000) -> str:
+    """
+    Extract readable plain text from raw HTML by removing noise and tags.
+
+    Args:
+        html_text (str): The raw HTML string.
+        limit (int): The maximum length of the returned string.
+
+    Returns:
+        str: The truncated plain text.
+    """
     text = strip_html_noise(html_text)
     text = re.sub(r"<[^>]+>", " ", text)
     text = clean_text(text)
@@ -115,6 +144,15 @@ def extract_plain_text_from_html(html_text: str, limit: int = 3000) -> str:
 
 
 def extract_jsonld_objects(html_text: str) -> list[object]:
+    """
+    Extract and parse all JSON-LD <script> block objects found in the given HTML.
+
+    Args:
+        html_text (str): The HTML to scan.
+
+    Returns:
+        list[object]: A list of deserialized JSON objects.
+    """
     pattern = re.compile(
         r"<script\b[^>]*type=[\"']application/ld\+json[\"'][^>]*>(.*?)</script>",
         re.IGNORECASE | re.DOTALL,
@@ -259,6 +297,17 @@ def jobposting_node_to_item(
     display_name: str,
     fallback_url: str = "",
 ) -> dict[str, str] | None:
+    """
+    Convert a JSON-LD 'JobPosting' node into a standardized item dictionary.
+
+    Args:
+        node (dict[str, object]): The JSON-LD node.
+        display_name (str): The name of the source or board to append to the description.
+        fallback_url (str): The URL to use if the node doesn't contain one.
+
+    Returns:
+        dict | None: The normalized job item, or None if the title/link is missing.
+    """
     title = clean_text(str(node.get("title", "") or node.get("name", "")))
     link = clean_text(str(node.get("url", "") or fallback_url))
     if not title or not link:
@@ -285,6 +334,16 @@ def jobposting_node_to_item(
 
 
 def extract_anchor_links(html_text: str, base_url: str) -> list[tuple[str, str]]:
+    """
+    Extract all <a> tags from an HTML string, resolving them against a base URL.
+
+    Args:
+        html_text (str): The HTML text.
+        base_url (str): The base URL for resolving relative links.
+
+    Returns:
+        list[tuple[str, str]]: A list of (absolute_url, anchor_text) tuples.
+    """
     pattern = re.compile(
         r"<a\b[^>]*href=(?P<quote>[\"'])(?P<href>.*?)(?P=quote)[^>]*>(?P<text>.*?)</a>",
         re.IGNORECASE | re.DOTALL,

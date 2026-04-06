@@ -1,3 +1,4 @@
+import contextlib
 import csv
 import json
 import sqlite3
@@ -13,7 +14,6 @@ def _connect(db_file: str) -> sqlite3.Connection:
     connection = sqlite3.connect(db_path)
     connection.row_factory = sqlite3.Row
     connection.execute("PRAGMA foreign_keys = ON")
-    connection.execute("PRAGMA journal_mode = WAL")
     connection.execute("PRAGMA busy_timeout = 5000")
     _initialize_database(connection)
     return connection
@@ -148,7 +148,7 @@ def _index_application(connection: sqlite3.Connection, application: dict[str, ob
     application_link = str(application.get("link", ""))
     if not application_link:
         return
-    link_values = _dedupe_values(list(application.get("links", [])) + [application_link])
+    link_values = _dedupe_values([*list(application.get("links", [])), application_link])
     fingerprint_values = _dedupe_values(list(application.get("fingerprints", [])))
     connection.executemany(
         "INSERT OR REPLACE INTO application_links(link_value, application_link) VALUES (?, ?)",
@@ -161,7 +161,7 @@ def _index_application(connection: sqlite3.Connection, application: dict[str, ob
 
 
 def load_jobs(db_file: str) -> list[dict[str, str]]:
-    with _connect(db_file) as connection:
+    with contextlib.closing(_connect(db_file)) as connection:
         rows = connection.execute("SELECT time, title, description, link FROM jobs ORDER BY id").fetchall()
     return [
         {
@@ -175,7 +175,7 @@ def load_jobs(db_file: str) -> list[dict[str, str]]:
 
 
 def load_latest_job_batch(db_file: str) -> tuple[str | None, list[dict[str, str]]]:
-    with _connect(db_file) as connection:
+    with contextlib.closing(_connect(db_file)) as connection:
         row = connection.execute("SELECT time FROM jobs ORDER BY id DESC LIMIT 1").fetchone()
         if row is None:
             return None, []
@@ -200,7 +200,7 @@ def append_jobs(db_file: str, rows: list[dict[str, str]]) -> None:
     if not rows:
         return
 
-    with _connect(db_file) as connection, connection:
+    with contextlib.closing(_connect(db_file)) as connection, connection:
         connection.executemany(
             """
                 INSERT OR IGNORE INTO jobs(time, title, description, link)
@@ -229,13 +229,13 @@ def export_jobs_to_csv(db_file: str, csv_file: str) -> None:
 
 
 def load_feed_state(db_file: str) -> dict[str, dict[str, float]]:
-    with _connect(db_file) as connection:
+    with contextlib.closing(_connect(db_file)) as connection:
         rows = connection.execute("SELECT name, last_checked_at FROM feed_state ORDER BY name").fetchall()
     return {str(row["name"]): {"last_checked_at": float(row["last_checked_at"])} for row in rows}
 
 
 def save_feed_state(db_file: str, feed_state: dict[str, dict[str, float]]) -> None:
-    with _connect(db_file) as connection, connection:
+    with contextlib.closing(_connect(db_file)) as connection, connection:
         connection.execute("DELETE FROM feed_state")
         connection.executemany(
             "INSERT INTO feed_state(name, last_checked_at) VALUES (?, ?)",
@@ -250,7 +250,7 @@ def save_feed_state(db_file: str, feed_state: dict[str, dict[str, float]]) -> No
 
 
 def load_seen_jobs_state(db_file: str) -> dict[str, object]:
-    with _connect(db_file) as connection:
+    with contextlib.closing(_connect(db_file)) as connection:
         fingerprints = [
             str(row["fingerprint"])
             for row in connection.execute("SELECT fingerprint FROM reviewed_fingerprints ORDER BY position").fetchall()
@@ -264,7 +264,7 @@ def load_seen_jobs_state(db_file: str) -> dict[str, object]:
 
 
 def reviewed_fingerprint_count(db_file: str) -> int:
-    with _connect(db_file) as connection:
+    with contextlib.closing(_connect(db_file)) as connection:
         row = connection.execute("SELECT COUNT(*) AS count FROM reviewed_fingerprints").fetchone()
     return int(row["count"]) if row is not None else 0
 
@@ -274,7 +274,7 @@ def has_any_reviewed_fingerprint(db_file: str, fingerprints: list[str]) -> bool:
     if not candidates:
         return False
     placeholders = ", ".join("?" for _ in candidates)
-    with _connect(db_file) as connection:
+    with contextlib.closing(_connect(db_file)) as connection:
         row = connection.execute(
             f"SELECT 1 FROM reviewed_fingerprints WHERE fingerprint IN ({placeholders}) LIMIT 1",
             tuple(candidates),
@@ -286,7 +286,7 @@ def append_reviewed_fingerprints(db_file: str, fingerprints: list[str], max_item
     candidates = _dedupe_values(fingerprints)
     if not candidates:
         return
-    with _connect(db_file) as connection, connection:
+    with contextlib.closing(_connect(db_file)) as connection, connection:
         position = _next_position(connection, "reviewed_fingerprints")
         for fingerprint in candidates:
             connection.execute(
@@ -315,7 +315,7 @@ def append_reviewed_fingerprints(db_file: str, fingerprints: list[str], max_item
 
 def save_seen_jobs_state(db_file: str, seen_jobs_state: dict[str, object]) -> None:
     fingerprints = list(seen_jobs_state.get("reviewed_fingerprints", []))
-    with _connect(db_file) as connection, connection:
+    with contextlib.closing(_connect(db_file)) as connection, connection:
         connection.execute("DELETE FROM reviewed_fingerprints")
         connection.executemany(
             "INSERT INTO reviewed_fingerprints(position, fingerprint) VALUES (?, ?)",
@@ -329,7 +329,7 @@ def save_seen_jobs_state(db_file: str, seen_jobs_state: dict[str, object]) -> No
 
 
 def load_alert_state(db_file: str) -> dict[str, object]:
-    with _connect(db_file) as connection:
+    with contextlib.closing(_connect(db_file)) as connection:
         alerted_links = [
             str(row["link"])
             for row in connection.execute("SELECT link FROM alerted_links ORDER BY position").fetchall()
@@ -356,7 +356,7 @@ def load_alert_state(db_file: str) -> dict[str, object]:
 def save_alert_state(db_file: str, alert_state: dict[str, object]) -> None:
     alerted_links = list(alert_state.get("alerted_links", []))
     pending_alerts = list(alert_state.get("pending_alerts", []))
-    with _connect(db_file) as connection, connection:
+    with contextlib.closing(_connect(db_file)) as connection, connection:
         connection.execute("DELETE FROM alerted_links")
         connection.executemany(
             "INSERT INTO alerted_links(position, link) VALUES (?, ?)",
@@ -387,7 +387,7 @@ def save_alert_state(db_file: str, alert_state: dict[str, object]) -> None:
 
 
 def load_applications_state(db_file: str) -> dict[str, object]:
-    with _connect(db_file) as connection:
+    with contextlib.closing(_connect(db_file)) as connection:
         applications = []
         for row in connection.execute("SELECT payload_json FROM applications ORDER BY position").fetchall():
             try:
@@ -416,7 +416,7 @@ def find_application_by_link_or_fingerprints(
 ) -> tuple[str | None, dict[str, object] | None]:
     candidate_link = str(link)
     candidate_fingerprints = _dedupe_values(fingerprints)
-    with _connect(db_file) as connection:
+    with contextlib.closing(_connect(db_file)) as connection:
         application_link = None
         if candidate_link:
             row = connection.execute(
@@ -458,7 +458,7 @@ def save_application_record(
     if not application_link:
         return
 
-    with _connect(db_file) as connection, connection:
+    with contextlib.closing(_connect(db_file)) as connection, connection:
         row = None
         if previous_link:
             row = connection.execute(
@@ -488,7 +488,7 @@ def save_application_record(
 
 def save_applications_state(db_file: str, applications_state: dict[str, object]) -> None:
     applications = list(applications_state.get("applications", []))
-    with _connect(db_file) as connection, connection:
+    with contextlib.closing(_connect(db_file)) as connection, connection:
         connection.execute("DELETE FROM applications")
         connection.execute("DELETE FROM application_links")
         connection.execute("DELETE FROM application_fingerprints")
@@ -522,7 +522,7 @@ def save_applications_state(db_file: str, applications_state: dict[str, object])
 
 
 def load_telegram_update_offset(db_file: str) -> int:
-    with _connect(db_file) as connection:
+    with contextlib.closing(_connect(db_file)) as connection:
         metadata = _load_scope_metadata(connection, "telegram")
     try:
         return max(0, int(metadata.get("update_offset", "0")))
@@ -531,7 +531,7 @@ def load_telegram_update_offset(db_file: str) -> int:
 
 
 def save_telegram_update_offset(db_file: str, offset: int) -> None:
-    with _connect(db_file) as connection, connection:
+    with contextlib.closing(_connect(db_file)) as connection, connection:
         connection.execute(
             "INSERT OR REPLACE INTO state_metadata(scope, key, value) VALUES ('telegram', 'update_offset', ?)",
             (str(max(0, int(offset))),),
@@ -545,7 +545,7 @@ def save_telegram_digest_session(
     pages: list[str],
     keep_latest: int = 20,
 ) -> None:
-    with _connect(db_file) as connection, connection:
+    with contextlib.closing(_connect(db_file)) as connection, connection:
         connection.execute(
             """
                 INSERT OR REPLACE INTO telegram_digest_sessions(session_id, created_at, pages_json)
@@ -573,7 +573,7 @@ def save_telegram_digest_session(
 
 
 def load_telegram_digest_session(db_file: str, session_id: str) -> dict[str, object] | None:
-    with _connect(db_file) as connection:
+    with contextlib.closing(_connect(db_file)) as connection:
         row = connection.execute(
             """
             SELECT session_id, created_at, pages_json

@@ -274,14 +274,14 @@ def extract_salary_range_gbp(text: str) -> dict[str, object] | None:
         re.compile(
             r"(?P<currency>£|gbp|us\$|usd|\$|eur|€)\s*"
             r"(?P<minimum>\d+(?:\.\d+)?)\s*(?P<minimum_k>k)?\s*"
-            r"(?:-|–|—|to)\s*"
+            r"(?:-|–|—|to)\s*"  # noqa: RUF001
             r"(?:(?:£|gbp|us\$|usd|\$|eur|€)\s*)?"
             r"(?P<maximum>\d+(?:\.\d+)?)\s*(?P<maximum_k>k)?",
             re.IGNORECASE,
         ),
         re.compile(
             r"(?P<minimum>\d+(?:\.\d+)?)\s*(?P<minimum_k>k)?\s*"
-            r"(?:-|–|—|to)\s*"
+            r"(?:-|–|—|to)\s*"  # noqa: RUF001
             r"(?P<maximum>\d+(?:\.\d+)?)\s*(?P<maximum_k>k)?\s*"
             r"(?P<currency>gbp|usd|eur|pounds?|dollars?|euros?)",
             re.IGNORECASE,
@@ -473,7 +473,8 @@ def build_why_this_fits_notes(
         if title_alignment_matches:
             notes.append(
                 ensure_sentence(
-                    f"The role sits in your {role_profile_match['display_name']} lane and overlaps with target titles like {', '.join(title_alignment_matches[:3])}"
+                    f"The role sits in your {role_profile_match['display_name']} lane"
+                    f" and overlaps with target titles like {', '.join(title_alignment_matches[:3])}"
                 )
             )
         else:
@@ -492,7 +493,8 @@ def build_why_this_fits_notes(
         top_evidence = evidence_entries[0]
         notes.append(
             ensure_sentence(
-                f"You already have direct evidence from {top_evidence['label']}: {truncate_text(top_evidence['text'], 170)}"
+                f"You already have direct evidence from {top_evidence['label']}:"
+                f" {truncate_text(top_evidence['text'], 170)}"
             )
         )
     return dedupe_preserving_order([note for note in notes if note])[:3]
@@ -533,7 +535,8 @@ def build_intro_message(
         evidence_clause = truncate_text(evidence_entries[0]["text"], 120).rstrip(".")
     lines = [
         f"{greeting} {intro_subject} with hands-on experience in {skill_clause}.",
-        f"I'm interested in the {role_name} role because it lines up closely with the support and systems work I already do.",
+        f"I'm interested in the {role_name} role because it lines up closely"
+        " with the support and systems work I already do.",
     ]
     if evidence_clause:
         lines.append(f"A relevant example from my recent work is: {evidence_clause}.")
@@ -586,7 +589,8 @@ def apply_feedback_adjustments(
         score_delta += source_adjustment
         append_reason(
             reasons,
-            f"feedback source {'boost' if source_adjustment > 0 else 'penalty'}: {clean_text(source_label)} ({source_adjustment:+d})",
+            f"feedback source {'boost' if source_adjustment > 0 else 'penalty'}:"
+            f" {clean_text(source_label)} ({source_adjustment:+d})",
         )
     keyword_adjustments = []
     for keyword in dedupe_preserving_order(feedback_keywords):

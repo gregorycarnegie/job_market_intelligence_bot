@@ -1,0 +1,42 @@
+name: CI
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          version: "latest"
+          enable-cache: true
+
+      - name: System Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - name: Install dependencies
+        run: uv sync --extra dev
+
+      - name: Run Ruff Linter
+        run: uv run ruff check .
+
+      - name: Run Ruff Formatter Checker
+        run: uv run ruff format --check .
+
+      - name: Run MyPy Type Checker
+        run: uv run mypy .
+
+      - name: Run Pylint
+        run: uv run pylint jobbot
+
+      - name: Run Pytest Coverage
+        run: uv run pytest --cov=jobbot tests/ --cov-fail-under=70 --cov-report=xml --cov-report=term-missing
