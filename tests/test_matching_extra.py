@@ -1,13 +1,9 @@
-import os
-import tempfile
 import unittest
 from unittest import mock
 
 from jobbot import matching
 from jobbot.common import (
-    CURRENCY_TO_GBP,
     fresh_applications_state,
-    normalize_application_status,
 )
 
 

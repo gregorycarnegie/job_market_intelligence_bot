@@ -9,6 +9,8 @@ from unittest import mock
 
 import pull_jobs
 from jobbot import storage as jobbot_storage
+from jobbot.common import fresh_applications_state
+from jobbot.matching import normalize_application_record, process_telegram_callback_updates, upsert_application_record
 from jobbot.models import JobLead
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -116,7 +118,7 @@ class PullJobsTestCase(unittest.TestCase):
         self.assertIn("blacklisted employer", " ".join(evaluation["reasons"]))
 
     def test_upsert_application_record_merges_duplicate_matches(self) -> None:
-        state = pull_jobs.fresh_applications_state()
+        state = fresh_applications_state()
         first_payload = {
             "title": "IT Support Engineer at Monzo",
             "description": "London hybrid Active Directory and Microsoft 365 support role.",
@@ -131,7 +133,7 @@ class PullJobsTestCase(unittest.TestCase):
             "intro_message": "Hi Monzo team, ...",
             "feedback_keywords": ["active directory", "microsoft 365"],
         }
-        created = pull_jobs.upsert_application_record(state, first_payload, "2026-04-04T10:00:00Z")
+        created = upsert_application_record(state, first_payload, "2026-04-04T10:00:00Z")
         self.assertTrue(created)
         self.assertEqual(len(state["applications"]), 1)
 
@@ -146,7 +148,7 @@ class PullJobsTestCase(unittest.TestCase):
             "resume_bullet_suggestions": ["Supported 600 to 700 users across Microsoft 365 and hardware."],
             "feedback_keywords": ["hardware support"],
         }
-        created = pull_jobs.upsert_application_record(state, second_payload, "2026-04-04T11:00:00Z")
+        created = upsert_application_record(state, second_payload, "2026-04-04T11:00:00Z")
         self.assertFalse(created)
         self.assertEqual(len(state["applications"]), 1)
 
@@ -225,9 +227,9 @@ class PullJobsTestCase(unittest.TestCase):
                 }
             }
         )
-        applications_state = pull_jobs.fresh_applications_state()
+        applications_state = fresh_applications_state()
         applications_state["applications"] = [
-            pull_jobs.normalize_application_record(
+            normalize_application_record(
                 {
                     "title": "IT Support Engineer at Good Co",
                     "description": "London hybrid Active Directory and Microsoft 365 support role",
@@ -242,7 +244,7 @@ class PullJobsTestCase(unittest.TestCase):
                     "last_seen_utc": "2026-03-20T09:00:00Z",
                 }
             ),
-            pull_jobs.normalize_application_record(
+            normalize_application_record(
                 {
                     "title": "Data Engineer at Bad Co",
                     "description": "London data engineering role",
@@ -257,7 +259,7 @@ class PullJobsTestCase(unittest.TestCase):
                     "last_seen_utc": "2026-03-15T09:00:00Z",
                 }
             ),
-            pull_jobs.normalize_application_record(
+            normalize_application_record(
                 {
                     "title": "Old Rejected Role at Old Co",
                     "description": "Old stale rejected role",
@@ -361,9 +363,9 @@ class PullJobsTestCase(unittest.TestCase):
                 "feedback": {"enabled": False},
             }
         )
-        applications_state = pull_jobs.fresh_applications_state()
+        applications_state = fresh_applications_state()
         applications_state["applications"] = [
-            pull_jobs.normalize_application_record(
+            normalize_application_record(
                 {
                     "title": f"IT Support Engineer {index} at Monzo",
                     "description": "London hybrid support role with Active Directory and Microsoft 365.",
@@ -478,7 +480,7 @@ class PullJobsTestCase(unittest.TestCase):
             mock.patch("jobbot.matching.edit_telegram_message", side_effect=fake_edit),
             mock.patch("jobbot.matching.answer_telegram_callback_query", side_effect=fake_answer),
         ):
-            handled, error = pull_jobs.process_telegram_callback_updates()
+            handled, error = process_telegram_callback_updates()
 
         self.assertEqual(handled, 1)
         self.assertEqual(error, "")

@@ -5,7 +5,7 @@ import logging
 import os
 import re
 from pathlib import Path
-from urllib.parse import urljoin, urlencode, urlsplit
+from urllib.parse import urlencode, urljoin, urlsplit
 from urllib.request import Request, urlopen
 from xml.etree import ElementTree
 

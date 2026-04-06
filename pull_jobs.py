@@ -10,6 +10,31 @@ import jobbot.common as common
 import jobbot.matching as matching
 import jobbot.sources as source_module
 import jobbot.storage as storage
+from jobbot.common import (
+    BORDERLINE_MATCH_MARGIN,
+    DEFAULT_APPLICATION_BRIEFS_MAX_ITEMS,
+    FEEDS,
+    MAX_REVIEWED_FINGERPRINTS,
+    MIN_MATCH_SCORE,
+    STATE_DB_FILE,
+    build_review_fingerprints,
+    clean_text,
+    get_source_display_name,
+    is_feed_due,
+)
+from jobbot.matching import (
+    build_daily_digest_snapshot,
+    build_feedback_metrics,
+    deliver_pending_alerts,
+    maybe_send_daily_digest,
+    prune_applications_state,
+    queue_pending_alerts,
+    score_job,
+    seed_applications_from_existing_jobs,
+    sync_application_outcomes,
+    upsert_application_record_in_storage,
+)
+from jobbot.sources import create_source
 
 
 def _load_dotenv(path: str = ".env") -> None:
@@ -46,159 +71,6 @@ DAILY_DIGEST_FILE = "daily_digest.json"
 APPLICATION_BRIEFS_FILE = "application_briefs.json"
 BORDERLINE_MATCHES_FILE = "borderline_matches.json"
 FEEDBACK_METRICS_FILE = "feedback_metrics.json"
-STATE_DB_FILE = common.STATE_DB_FILE
-
-CSV_HEADERS = common.CSV_HEADERS
-FETCH_TIMEOUT_SECONDS = common.FETCH_TIMEOUT_SECONDS
-USER_AGENT = common.USER_AGENT
-MIN_MATCH_SCORE = common.MIN_MATCH_SCORE
-MAX_ALERTED_LINKS = common.MAX_ALERTED_LINKS
-MAX_REVIEWED_FINGERPRINTS = common.MAX_REVIEWED_FINGERPRINTS
-MAX_APPLICATION_RECORDS = common.MAX_APPLICATION_RECORDS
-BOARD_PAGE_LIMIT = common.BOARD_PAGE_LIMIT
-GENERIC_HTML_MAX_START_URLS = common.GENERIC_HTML_MAX_START_URLS
-GENERIC_HTML_MAX_JOB_LINKS = common.GENERIC_HTML_MAX_JOB_LINKS
-DEFAULT_DAILY_DIGEST_HOUR_UTC = common.DEFAULT_DAILY_DIGEST_HOUR_UTC
-DEFAULT_DAILY_DIGEST_MAX_ITEMS = common.DEFAULT_DAILY_DIGEST_MAX_ITEMS
-DEFAULT_DAILY_DIGEST_PAGE_SIZE = common.DEFAULT_DAILY_DIGEST_PAGE_SIZE
-DEFAULT_APPLICATION_BRIEFS_MAX_ITEMS = common.DEFAULT_APPLICATION_BRIEFS_MAX_ITEMS
-APPLICATION_STATUSES = common.APPLICATION_STATUSES
-DEFAULT_DAILY_DIGEST_STATUSES = common.DEFAULT_DAILY_DIGEST_STATUSES
-COMPANY_CONTROL_ORDER = common.COMPANY_CONTROL_ORDER
-BORDERLINE_MATCH_MARGIN = common.BORDERLINE_MATCH_MARGIN
-APPLICATION_READY_SCORE = common.APPLICATION_READY_SCORE
-OUTCOME_RELEVANT_STATUSES = common.OUTCOME_RELEVANT_STATUSES
-DEFAULT_FEEDBACK_MIN_SAMPLES = common.DEFAULT_FEEDBACK_MIN_SAMPLES
-DEFAULT_MAX_SOURCE_FEEDBACK_ADJUSTMENT = common.DEFAULT_MAX_SOURCE_FEEDBACK_ADJUSTMENT
-DEFAULT_MAX_KEYWORD_FEEDBACK_ADJUSTMENT = common.DEFAULT_MAX_KEYWORD_FEEDBACK_ADJUSTMENT
-DEFAULT_FEEDBACK_KEYWORD_LIMIT = common.DEFAULT_FEEDBACK_KEYWORD_LIMIT
-DEFAULT_NEW_REVIEWED_RETENTION_DAYS = common.DEFAULT_NEW_REVIEWED_RETENTION_DAYS
-DEFAULT_REJECTED_RETENTION_DAYS = common.DEFAULT_REJECTED_RETENTION_DAYS
-DEFAULT_APPLIED_RETENTION_DAYS = common.DEFAULT_APPLIED_RETENTION_DAYS
-DEFAULT_INTERVIEW_RETENTION_DAYS = common.DEFAULT_INTERVIEW_RETENTION_DAYS
-LOCATION_ALIASES = common.LOCATION_ALIASES
-POSITIVE_TITLE_WEIGHTS = common.POSITIVE_TITLE_WEIGHTS
-NEGATIVE_TITLE_WEIGHTS = common.NEGATIVE_TITLE_WEIGHTS
-SENIORITY_PENALTIES = common.SENIORITY_PENALTIES
-TRACKING_QUERY_PARAMS = common.TRACKING_QUERY_PARAMS
-CURRENCY_TO_GBP = common.CURRENCY_TO_GBP
-CADENCE_TO_ANNUAL_MULTIPLIER = common.CADENCE_TO_ANNUAL_MULTIPLIER
-JOB_TITLE_HINT_RE = common.JOB_TITLE_HINT_RE
-DEFAULT_GENERIC_JOB_LINK_KEYWORDS = common.DEFAULT_GENERIC_JOB_LINK_KEYWORDS
-DEFAULT_ROLE_PROFILE_CONFIGS = common.DEFAULT_ROLE_PROFILE_CONFIGS
-FEEDS = common.FEEDS
-SUPPORTED_BOARD_PLATFORMS = common.SUPPORTED_BOARD_PLATFORMS
-COMPANY_BOARD_REQUIRED_FIELDS = common.COMPANY_BOARD_REQUIRED_FIELDS
-PatternEntry = common.PatternEntry
-
-clean_text = common.clean_text
-normalize_text = common.normalize_text
-strip_cdata = common.strip_cdata
-strip_tags = common.strip_tags
-compile_skill_pattern = common.compile_skill_pattern
-contains_phrase = common.contains_phrase
-build_pattern_entries = common.build_pattern_entries
-find_pattern_matches = common.find_pattern_matches
-append_reason = common.append_reason
-safe_int = common.safe_int
-parse_bool = common.parse_bool
-dedupe_preserving_order = common.dedupe_preserving_order
-fresh_alert_state = common.fresh_alert_state
-fresh_seen_jobs_state = common.fresh_seen_jobs_state
-fresh_applications_state = common.fresh_applications_state
-join_text_parts = common.join_text_parts
-normalize_string_list = common.normalize_string_list
-normalize_url_list = common.normalize_url_list
-normalize_link_for_fingerprint = common.normalize_link_for_fingerprint
-looks_like_job_title = common.looks_like_job_title
-normalize_company_name = common.normalize_company_name
-split_title_and_company = common.split_title_and_company
-build_review_fingerprints = common.build_review_fingerprints
-expand_location_terms = common.expand_location_terms
-build_resume_evidence_entries = common.build_resume_evidence_entries
-normalize_company_control_values = common.normalize_company_control_values
-normalize_role_profile = common.normalize_role_profile
-normalize_role_profiles = common.normalize_role_profiles
-atomic_write_json = common.atomic_write_json
-is_feed_due = common.is_feed_due
-get_source_display_name = common.get_source_display_name
-normalize_pending_alert = common.normalize_pending_alert
-normalize_company_control = common.normalize_company_control
-stronger_company_control = common.stronger_company_control
-normalize_application_status = common.normalize_application_status
-ensure_sentence = common.ensure_sentence
-truncate_text = common.truncate_text
-build_focus_phrases = common.build_focus_phrases
-parse_iso_utc = common.parse_iso_utc
-latest_application_timestamp = common.latest_application_timestamp
-
-fetch_feed = source_module.fetch_feed
-fetch_json = source_module.fetch_json
-strip_html_noise = source_module.strip_html_noise
-extract_meta_content = source_module.extract_meta_content
-extract_page_title = source_module.extract_page_title
-extract_plain_text_from_html = source_module.extract_plain_text_from_html
-extract_jsonld_objects = source_module.extract_jsonld_objects
-iter_json_nodes = source_module.iter_json_nodes
-node_has_type = source_module.node_has_type
-extract_jobposting_nodes = source_module.extract_jobposting_nodes
-format_jsonld_address = source_module.format_jsonld_address
-extract_jsonld_location_text = source_module.extract_jsonld_location_text
-normalize_salary_unit_text = source_module.normalize_salary_unit_text
-format_provider_salary_text = source_module.format_provider_salary_text
-extract_jsonld_salary_text = source_module.extract_jsonld_salary_text
-jobposting_node_to_item = source_module.jobposting_node_to_item
-extract_anchor_links = source_module.extract_anchor_links
-url_matches_allowed_domains = source_module.url_matches_allowed_domains
-looks_like_generic_job_link = source_module.looks_like_generic_job_link
-fallback_generic_job_item = source_module.fallback_generic_job_item
-sanitize_xml = source_module.sanitize_xml
-local_name = source_module.local_name
-extract_link = source_module.extract_link
-extract_description = source_module.extract_description
-parse_structured_feed = source_module.parse_structured_feed
-extract_tag_text = source_module.extract_tag_text
-create_source = source_module.create_source
-
-normalize_application_record = matching.normalize_application_record
-evaluate_location_fit = matching.evaluate_location_fit
-normalize_currency_token = matching.normalize_currency_token
-detect_salary_cadence = matching.detect_salary_cadence
-parse_salary_amount = matching.parse_salary_amount
-annualize_salary_to_gbp = matching.annualize_salary_to_gbp
-build_salary_info = matching.build_salary_info
-extract_salary_range_gbp = matching.extract_salary_range_gbp
-format_salary_info_for_reason = matching.format_salary_info_for_reason
-apply_weight_map = matching.apply_weight_map
-evaluate_company_preferences = matching.evaluate_company_preferences
-evaluate_role_profile = matching.evaluate_role_profile
-select_resume_evidence = matching.select_resume_evidence
-build_why_this_fits_notes = matching.build_why_this_fits_notes
-build_resume_bullet_suggestions = matching.build_resume_bullet_suggestions
-build_intro_message = matching.build_intro_message
-build_application_materials = matching.build_application_materials
-apply_feedback_adjustments = matching.apply_feedback_adjustments
-score_job = matching.score_job
-queue_pending_alerts = matching.queue_pending_alerts
-load_telegram_settings = matching.load_telegram_settings
-format_alert_message = matching.format_alert_message
-send_telegram_message = matching.send_telegram_message
-deliver_pending_alerts = matching.deliver_pending_alerts
-process_telegram_callback_updates = matching.process_telegram_callback_updates
-sync_application_outcomes = matching.sync_application_outcomes
-prune_applications_state = matching.prune_applications_state
-fresh_feedback_counts = matching.fresh_feedback_counts
-increment_feedback_counts = matching.increment_feedback_counts
-compute_feedback_adjustment = matching.compute_feedback_adjustment
-build_feedback_metrics = matching.build_feedback_metrics
-find_application_record = matching.find_application_record
-upsert_application_record = matching.upsert_application_record
-upsert_application_record_in_storage = matching.upsert_application_record_in_storage
-seed_applications_from_existing_jobs = matching.seed_applications_from_existing_jobs
-rank_application_for_digest = matching.rank_application_for_digest
-build_daily_digest_snapshot = matching.build_daily_digest_snapshot
-format_daily_digest_message = matching.format_daily_digest_message
-maybe_send_daily_digest = matching.maybe_send_daily_digest
 
 
 def load_resume_profile() -> dict[str, object]:
