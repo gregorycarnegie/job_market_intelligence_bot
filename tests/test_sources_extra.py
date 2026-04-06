@@ -156,9 +156,9 @@ class JobpostingNodeToItemTestCase(unittest.TestCase):
         }
         item = sources.jobposting_node_to_item(node, "Acme")
         self.assertIsNotNone(item)
-        self.assertEqual(item["title"], "IT Support Engineer")
-        self.assertEqual(item["link"], "https://example.com/jobs/1")
-        self.assertIn("Acme", item["description"])
+        self.assertEqual(item.title, "IT Support Engineer")
+        self.assertEqual(item.link, "https://example.com/jobs/1")
+        self.assertIn("Acme", item.description)
 
     def test_returns_none_when_missing_title(self) -> None:
         node = {"url": "https://example.com/jobs/1"}
@@ -172,13 +172,13 @@ class JobpostingNodeToItemTestCase(unittest.TestCase):
         node = {"title": "Engineer", "name": "Engineer"}
         item = sources.jobposting_node_to_item(node, "Acme", fallback_url="https://example.com/fallback")
         self.assertIsNotNone(item)
-        self.assertEqual(item["link"], "https://example.com/fallback")
+        self.assertEqual(item.link, "https://example.com/fallback")
 
     def test_uses_name_field_as_title(self) -> None:
         node = {"name": "IT Technician", "url": "https://example.com/jobs/2"}
         item = sources.jobposting_node_to_item(node, "Acme")
         self.assertIsNotNone(item)
-        self.assertEqual(item["title"], "IT Technician")
+        self.assertEqual(item.title, "IT Technician")
 
 
 class ExtractAnchorLinksTestCase(unittest.TestCase):
@@ -240,8 +240,8 @@ class FallbackGenericJobItemTestCase(unittest.TestCase):
         html = "<title>Software Engineer</title><p>" + "X" * 50 + "</p>"
         item = sources.fallback_generic_job_item(html, "https://example.com/job", "Acme")
         self.assertIsNotNone(item)
-        self.assertEqual(item["title"], "Software Engineer")
-        self.assertEqual(item["link"], "https://example.com/job")
+        self.assertEqual(item.title, "Software Engineer")
+        self.assertEqual(item.link, "https://example.com/job")
 
     def test_returns_none_when_no_title(self) -> None:
         html = "<p>No title here</p>"
@@ -286,8 +286,8 @@ class ParseStructuredFeedTestCase(unittest.TestCase):
         </channel></rss>"""
         items = sources.parse_structured_feed(xml)
         self.assertEqual(len(items), 1)
-        self.assertEqual(items[0]["title"], "IT Support Engineer")
-        self.assertEqual(items[0]["link"], "https://example.com/job/1")
+        self.assertEqual(items[0].title, "IT Support Engineer")
+        self.assertEqual(items[0].link, "https://example.com/job/1")
 
     def test_deduplicates_by_link(self) -> None:
         xml = """<?xml version="1.0"?>
@@ -309,7 +309,7 @@ class ParseStructuredFeedTestCase(unittest.TestCase):
         </feed>"""
         items = sources.parse_structured_feed(xml)
         self.assertEqual(len(items), 1)
-        self.assertIn("Analyst", items[0]["title"])
+        self.assertIn("Analyst", items[0].title)
 
 
 class ParseFallbackFeedTestCase(unittest.TestCase):
@@ -324,7 +324,7 @@ class ParseFallbackFeedTestCase(unittest.TestCase):
         </channel></rss>"""
         items = sources.parse_fallback_feed(xml)
         self.assertEqual(len(items), 1)
-        self.assertEqual(items[0]["title"], "Support Role")
+        self.assertEqual(items[0].title, "Support Role")
 
     def test_parses_link_with_href_attribute(self) -> None:
         xml = """
@@ -336,7 +336,7 @@ class ParseFallbackFeedTestCase(unittest.TestCase):
         </feed>"""
         items = sources.parse_fallback_feed(xml)
         self.assertEqual(len(items), 1)
-        self.assertEqual(items[0]["link"], "https://example.com/role")
+        self.assertEqual(items[0].link, "https://example.com/role")
 
 
 class ParseFeedItemsTestCase(unittest.TestCase):
@@ -376,8 +376,8 @@ class ParseEfinancialcareersHtmlTestCase(unittest.TestCase):
         """
         items = sources.parse_efinancialcareers_html(html, {"context_terms": "london finance"})
         self.assertEqual(len(items), 1)
-        self.assertEqual(items[0]["title"], "IT Support Analyst")
-        self.assertIn("efinancialcareers.com", items[0]["link"])
+        self.assertEqual(items[0].title, "IT Support Analyst")
+        self.assertIn("efinancialcareers.com", items[0].link)
 
     def test_skips_short_titles(self) -> None:
         html = """<a href="/jobs-it.id999">IT</a>"""
@@ -538,8 +538,8 @@ class FetchGreenhouseBoardJobsTestCase(unittest.TestCase):
             items = sources.fetch_greenhouse_board_jobs(board)
 
         self.assertEqual(len(items), 1)
-        self.assertEqual(items[0]["title"], "IT Support Engineer")
-        self.assertIn("London", items[0]["description"])
+        self.assertEqual(items[0].title, "IT Support Engineer")
+        self.assertIn("London", items[0].description)
 
 
 class FetchLeverBoardJobsTestCase(unittest.TestCase):
@@ -560,8 +560,8 @@ class FetchLeverBoardJobsTestCase(unittest.TestCase):
             items = sources.fetch_lever_board_jobs(board)
 
         self.assertEqual(len(items), 1)
-        self.assertEqual(items[0]["title"], "IT Support")
-        self.assertIn("London", items[0]["description"])
+        self.assertEqual(items[0].title, "IT Support")
+        self.assertIn("London", items[0].description)
 
     def test_uses_eu_base_url_for_eu_instance(self) -> None:
         board = {"site": "acme", "display_name": "Acme", "instance": "eu"}
@@ -599,7 +599,7 @@ class FetchAshbyBoardJobsTestCase(unittest.TestCase):
             items = sources.fetch_ashby_board_jobs(board)
 
         self.assertEqual(len(items), 1)
-        self.assertEqual(items[0]["title"], "IT Technician")
+        self.assertEqual(items[0].title, "IT Technician")
 
     def test_skips_unlisted_jobs(self) -> None:
         board = {"job_board_name": "startup", "display_name": "Startup"}
@@ -633,7 +633,7 @@ class FetchWorkableBoardJobsTestCase(unittest.TestCase):
             items = sources.fetch_workable_board_jobs(board)
 
         self.assertEqual(len(items), 1)
-        self.assertEqual(items[0]["title"], "IT Support")
+        self.assertEqual(items[0].title, "IT Support")
 
     def test_raises_when_spi_token_missing(self) -> None:
         board = {

@@ -27,6 +27,7 @@ from jobbot.common import (
     strip_cdata,
     strip_tags,
 )
+from jobbot.models import JobLead, Source
 
 logger = logging.getLogger(__name__)
 
@@ -296,7 +297,7 @@ def jobposting_node_to_item(
     node: dict[str, object],
     display_name: str,
     fallback_url: str = "",
-) -> dict[str, str] | None:
+) -> JobLead | None:
     """
     Convert a JSON-LD 'JobPosting' node into a standardized item dictionary.
 
@@ -306,7 +307,7 @@ def jobposting_node_to_item(
         fallback_url (str): The URL to use if the node doesn't contain one.
 
     Returns:
-        dict | None: The normalized job item, or None if the title/link is missing.
+        JobLead | None: The normalized job item, or None if the title/link is missing.
     """
     title = clean_text(str(node.get("title", "") or node.get("name", "")))
     link = clean_text(str(node.get("url", "") or fallback_url))
@@ -318,19 +319,25 @@ def jobposting_node_to_item(
     if isinstance(hiring_organization, dict):
         company_name = clean_text(str(hiring_organization.get("name", "")))
 
+    location = extract_jsonld_location_text(node)
+    employment_type = clean_text(str(node.get("employmentType", "")))
+    salary = extract_jsonld_salary_text(node)
     description = join_text_parts(
         node.get("description", ""),
-        extract_jsonld_location_text(node),
-        node.get("employmentType", ""),
-        company_name,
-        extract_jsonld_salary_text(node),
-        display_name,
+        company_name or display_name,
+        location,
     )
-    return {
-        "title": title,
-        "description": description,
-        "link": link,
-    }
+
+    return JobLead(
+        title=title,
+        link=link,
+        source=display_name,
+        company=company_name or display_name,
+        location=location,
+        salary=salary,
+        description=description,
+        employment_type=employment_type,
+    )
 
 
 def extract_anchor_links(html_text: str, base_url: str) -> list[tuple[str, str]]:
@@ -388,62 +395,68 @@ def looks_like_generic_job_link(
     return bool(any(keyword in normalized_url or keyword in normalized_anchor for keyword in keywords))
 
 
-def fallback_generic_job_item(html_text: str, url: str, display_name: str) -> dict[str, str] | None:
+def fallback_generic_job_item(html_text: str, url: str, display_name: str) -> JobLead | None:
     title = extract_page_title(html_text)
     if not title:
         return None
 
     plain_text = extract_plain_text_from_html(html_text)
-    description = join_text_parts(plain_text, display_name)
-    if len(description) < 24:
+    if len(plain_text) < 24:
         return None
 
-    return {
-        "title": title,
-        "description": description,
-        "link": url,
-    }
+    return JobLead(
+        title=title,
+        link=url,
+        source=display_name,
+        company=display_name,
+        location="",
+        salary="",
+        description=plain_text,
+        employment_type="",
+    )
 
 
-def fetch_generic_html_board_jobs(board: dict[str, object]) -> list[dict[str, str]]:
-    candidate_links = []
-    for start_url in board["start_urls"][:GENERIC_HTML_MAX_START_URLS]:
-        html_text = fetch_feed(start_url)
-        for absolute_url, anchor_text in extract_anchor_links(html_text, start_url):
-            if looks_like_generic_job_link(absolute_url, anchor_text, board):
-                candidate_links.append(absolute_url)
+class GenericHtmlSource(Source):
+    def fetch(self) -> list[JobLead]:
+        board = self.config
+        candidate_links = []
+        for start_url in board["start_urls"][:GENERIC_HTML_MAX_START_URLS]:
+            html_text = fetch_feed(start_url)
+            for absolute_url, anchor_text in extract_anchor_links(html_text, start_url):
+                if looks_like_generic_job_link(absolute_url, anchor_text, board):
+                    candidate_links.append(absolute_url)
 
-    items = []
-    seen_links = set()
-    candidate_links = dedupe_preserving_order(candidate_links)[
-        : safe_int(board.get("max_job_pages"), GENERIC_HTML_MAX_JOB_LINKS)
-    ]
-
-    for candidate_link in candidate_links:
-        html_text = fetch_feed(candidate_link)
-        jsonld_items = [
-            item
-            for item in (
-                jobposting_node_to_item(node, str(board.get("display_name", "")), candidate_link)
-                for node in extract_jobposting_nodes(html_text)
-            )
-            if item is not None
+        items = []
+        seen_links = set()
+        candidate_links = dedupe_preserving_order(candidate_links)[
+            : safe_int(board.get("max_job_pages"), GENERIC_HTML_MAX_JOB_LINKS)
         ]
 
-        if jsonld_items:
-            for item in jsonld_items:
-                link = clean_text(item["link"])
-                if link and link not in seen_links:
-                    items.append(item)
-                    seen_links.add(link)
-            continue
+        for candidate_link in candidate_links:
+            html_text = fetch_feed(candidate_link)
+            jsonld_items = [
+                item
+                for item in (
+                    jobposting_node_to_item(node, str(board.get("display_name", "")), candidate_link)
+                    for node in extract_jobposting_nodes(html_text)
+                )
+                if item is not None
+            ]
 
-        fallback_item = fallback_generic_job_item(html_text, candidate_link, str(board.get("display_name", "")))
-        if fallback_item is not None:
-            items.append(fallback_item)
-            seen_links.add(fallback_item["link"])
+            if jsonld_items:
+                for item in jsonld_items:
+                    link = clean_text(item.link)
+                    if link and link not in seen_links:
+                        items.append(item)
+                        seen_links.add(link)
+                continue
 
-    return items
+            fallback_item = fallback_generic_job_item(html_text, candidate_link, str(board.get("display_name", "")))
+            if fallback_item is not None:
+                items.append(fallback_item)
+                seen_links.add(fallback_item.link)
+
+        return items
 
 
 def sanitize_xml(xml_raw: str) -> str:
@@ -480,7 +493,7 @@ def extract_description(item: ElementTree.Element) -> str:
     return ""
 
 
-def parse_structured_feed(xml_text: str) -> list[dict[str, str]]:
+def parse_structured_feed(xml_text: str, display_name: str = "") -> list[JobLead]:
     root = ElementTree.fromstring(xml_text)
     items = []
     seen_links = set()
@@ -505,11 +518,16 @@ def parse_structured_feed(xml_text: str) -> list[dict[str, str]]:
             continue
 
         items.append(
-            {
-                "title": clean_text(title),
-                "description": clean_text(description),
-                "link": clean_text(link),
-            }
+            JobLead(
+                title=clean_text(title),
+                description=clean_text(description),
+                link=clean_text(link),
+                source=display_name,
+                company="",
+                location="",
+                salary="",
+                employment_type="",
+            )
         )
         seen_links.add(link)
 
@@ -528,7 +546,7 @@ def extract_tag_text(block: str, tag_names: list[str]) -> str:
     return ""
 
 
-def parse_fallback_feed(xml_text: str) -> list[dict[str, str]]:
+def parse_fallback_feed(xml_text: str, display_name: str = "") -> list[JobLead]:
     items = []
     blocks = re.findall(r"<(item|entry|job)\b[^>]*>(.*?)</\1>", xml_text, re.IGNORECASE | re.DOTALL)
 
@@ -548,71 +566,83 @@ def parse_fallback_feed(xml_text: str) -> list[dict[str, str]]:
 
         if title or link or description:
             items.append(
-                {
-                    "title": title,
-                    "description": description,
-                    "link": link,
-                }
+                JobLead(
+                    title=title,
+                    description=description,
+                    link=link,
+                    source=display_name,
+                    company=display_name,
+                    location="",
+                    salary="",
+                    employment_type="",
+                )
             )
 
     return items
 
 
-def parse_feed_items(xml_raw: str) -> list[dict[str, str]]:
-    try:
-        return parse_structured_feed(xml_raw)
-    except ElementTree.ParseError:
-        sanitized = sanitize_xml(xml_raw)
+class RssSource(Source):
+    def fetch(self) -> list[JobLead]:
+        source = self.config
+        xml_raw = fetch_feed(str(source.get("url", "")))
+        display_name = str(source.get("display_name", "") or source.get("name", ""))
         try:
-            return parse_structured_feed(sanitized)
+            return parse_structured_feed(xml_raw, display_name)
         except ElementTree.ParseError:
-            items = parse_fallback_feed(sanitized)
-            if items:
-                return items
-            raise
+            sanitized = sanitize_xml(xml_raw)
+            try:
+                return parse_structured_feed(sanitized, display_name)
+            except ElementTree.ParseError:
+                items = parse_fallback_feed(sanitized, display_name)
+                if items:
+                    return items
+                raise
 
 
-def parse_efinancialcareers_html(html_text: str, source: dict[str, str | int]) -> list[dict[str, str]]:
-    pattern = re.compile(
-        r"""href=["'](?P<link>(?:https://www\.efinancialcareers\.com)?/(?:jobs-[^"'?#]+?id\d+))["'][^>]*>(?P<title>.*?)</a>""",
-        re.IGNORECASE | re.DOTALL,
-    )
-    items = []
-    seen_links = set()
-
-    for match in pattern.finditer(html_text):
-        link = html.unescape(match.group("link")).strip()
-        if link.startswith("/"):
-            link = f"https://www.efinancialcareers.com{link}"
-        if link in seen_links:
-            continue
-
-        raw_title = html.unescape(match.group("title"))
-        title = clean_text(strip_tags(raw_title))
-        if not title or title.lower() in {"apply now", "save"} or len(title) < 4:
-            continue
-
-        slug = link.rsplit("/", 1)[-1]
-        slug = re.sub(r"\.id\d+.*$", "", slug)
-        slug = slug.replace("jobs-", "").replace("_", " ").replace("-", " ")
-        description = " ".join(part for part in [clean_text(slug), str(source.get("context_terms", ""))] if part)
-
-        items.append(
-            {
-                "title": title,
-                "description": description,
-                "link": link,
-            }
+class EfcHtmlSource(Source):
+    def fetch(self) -> list[JobLead]:
+        source = self.config
+        html_text = fetch_feed(str(source.get("url", "")))
+        display_name = str(source.get("display_name", "") or source.get("name", ""))
+        pattern = re.compile(
+            r"""href=["'](?P<link>(?:https://www\.efinancialcareers\.com)?/(?:jobs-[^"'?#]+?id\d+))["'][^>]*>(?P<title>.*?)</a>""",
+            re.IGNORECASE | re.DOTALL,
         )
-        seen_links.add(link)
+        items = []
+        seen_links = set()
 
-    return items
+        for match in pattern.finditer(html_text):
+            link = html.unescape(match.group("link")).strip()
+            if link.startswith("/"):
+                link = f"https://www.efinancialcareers.com{link}"
+            if link in seen_links:
+                continue
 
+            raw_title = html.unescape(match.group("title"))
+            title = clean_text(strip_tags(raw_title))
+            if not title or title.lower() in {"apply now", "save"} or len(title) < 4:
+                continue
 
-def parse_source_items(source: dict[str, str | int], raw_text: str) -> list[dict[str, str]]:
-    if source.get("type") == "efc_html":
-        return parse_efinancialcareers_html(raw_text, source)
-    return parse_feed_items(raw_text)
+            slug = link.rsplit("/", 1)[-1]
+            slug = re.sub(r"\.id\d+.*$", "", slug)
+            slug = slug.replace("jobs-", "").replace("_", " ").replace("-", " ")
+            description = " ".join(part for part in [clean_text(slug), str(source.get("context_terms", ""))] if part)
+
+            items.append(
+                JobLead(
+                    title=title,
+                    description=description,
+                    link=link,
+                    source=display_name,
+                    company=display_name,
+                    location="",
+                    salary="",
+                    employment_type="",
+                )
+            )
+            seen_links.add(link)
+
+        return items
 
 
 def _normalize_greenhouse(raw_board: dict[str, object], normalized: dict[str, object]) -> None:
@@ -737,201 +767,291 @@ def load_company_boards(company_boards_file: str) -> list[dict[str, object]]:
     return normalized_boards
 
 
-def fetch_greenhouse_board_jobs(board: dict[str, object]) -> list[dict[str, str]]:
-    payload = fetch_json(f"https://boards-api.greenhouse.io/v1/boards/{board['board_token']}/jobs?content=true")
-    jobs = payload.get("jobs", []) if isinstance(payload, dict) else []
-    items = []
-
-    for job in jobs:
-        if not isinstance(job, dict):
-            continue
-        departments = ", ".join(
-            clean_text(str(department.get("name", "")))
-            for department in job.get("departments", [])
-            if isinstance(department, dict) and clean_text(str(department.get("name", "")))
-        )
-        offices = ", ".join(
-            join_text_parts(office.get("name", ""), office.get("location", ""))
-            for office in job.get("offices", [])
-            if isinstance(office, dict)
-        )
-        location = (
-            clean_text(str(job.get("location", {}).get("name", ""))) if isinstance(job.get("location"), dict) else ""
-        )
-        items.append(
-            {
-                "title": clean_text(str(job.get("title", ""))),
-                "description": join_text_parts(
-                    job.get("content", ""),
-                    location,
-                    departments,
-                    offices,
-                    board.get("display_name", ""),
-                ),
-                "link": clean_text(str(job.get("absolute_url", ""))),
-            }
-        )
-
-    return items
-
-
-def fetch_lever_board_jobs(board: dict[str, object]) -> list[dict[str, str]]:
-    instance = normalize_text(str(board.get("instance", "global"))) or "global"
-    base_url = "https://api.eu.lever.co" if instance == "eu" else "https://api.lever.co"
-    items = []
-    skip = 0
-
-    while True:
-        payload = fetch_json(f"{base_url}/v0/postings/{board['site']}?mode=json&limit={BOARD_PAGE_LIMIT}&skip={skip}")
-        jobs = payload if isinstance(payload, list) else []
-        if not jobs:
-            break
+class GreenhouseSource(Source):
+    def fetch(self) -> list[JobLead]:
+        board = self.config
+        payload = fetch_json(f"https://boards-api.greenhouse.io/v1/boards/{board['board_token']}/jobs?content=true")
+        jobs = payload.get("jobs", []) if isinstance(payload, dict) else []
+        items = []
 
         for job in jobs:
             if not isinstance(job, dict):
                 continue
-            categories = job.get("categories", {}) if isinstance(job.get("categories"), dict) else {}
-            salary_range = job.get("salaryRange", {}) if isinstance(job.get("salaryRange"), dict) else {}
+            departments = ", ".join(
+                clean_text(str(department.get("name", "")))
+                for department in job.get("departments", [])
+                if isinstance(department, dict) and clean_text(str(department.get("name", "")))
+            )
+            offices = ", ".join(
+                join_text_parts(office.get("name", ""), office.get("location", ""))
+                for office in job.get("offices", [])
+                if isinstance(office, dict)
+            )
+            location = (
+                clean_text(str(job.get("location", {}).get("name", "")))
+                if isinstance(job.get("location"), dict)
+                else ""
+            )
             items.append(
-                {
-                    "title": clean_text(str(job.get("text", ""))),
-                    "description": join_text_parts(
-                        job.get("descriptionPlain", ""),
-                        job.get("descriptionBodyPlain", ""),
-                        job.get("additionalPlain", ""),
-                        categories.get("location", ""),
-                        categories.get("team", ""),
-                        categories.get("department", ""),
-                        categories.get("commitment", ""),
-                        job.get("workplaceType", ""),
-                        format_provider_salary_text(
-                            salary_range.get("min"),
-                            salary_range.get("max"),
-                            salary_range.get("currency"),
-                            str(salary_range.get("interval", "year")).replace("_", " "),
-                        ),
-                        job.get("salaryDescriptionPlain", ""),
-                        board.get("display_name", ""),
-                    ),
-                    "link": clean_text(str(job.get("hostedUrl", "") or job.get("applyUrl", ""))),
-                }
+                JobLead(
+                    title=clean_text(str(job.get("title", ""))),
+                    description=join_text_parts(job.get("content", ""), departments, offices),
+                    location=location,
+                    company=board.get("display_name", ""),
+                    source="Greenhouse",
+                    salary="",
+                    employment_type="",
+                    link=clean_text(str(job.get("absolute_url", ""))),
+                )
             )
 
-        if len(jobs) < BOARD_PAGE_LIMIT:
-            break
-        skip += BOARD_PAGE_LIMIT
-
-    return items
+        return items
 
 
-def fetch_ashby_board_jobs(board: dict[str, object]) -> list[dict[str, str]]:
-    payload = fetch_json(
-        f"https://api.ashbyhq.com/posting-api/job-board/{board['job_board_name']}?includeCompensation=true"
-    )
-    jobs = payload.get("jobs", []) if isinstance(payload, dict) else []
-    items = []
+class LeverSource(Source):
+    def fetch(self) -> list[JobLead]:
+        board = self.config
+        instance = normalize_text(str(board.get("instance", "global"))) or "global"
+        base_url = "https://api.eu.lever.co" if instance == "eu" else "https://api.lever.co"
+        items = []
+        skip = 0
 
-    for job in jobs:
-        if not isinstance(job, dict):
-            continue
-        if job.get("isListed") is False:
-            continue
-        compensation = job.get("compensation", {}) if isinstance(job.get("compensation"), dict) else {}
-        items.append(
-            {
-                "title": clean_text(str(job.get("title", ""))),
-                "description": join_text_parts(
-                    job.get("descriptionPlain", ""),
-                    job.get("location", ""),
-                    job.get("department", ""),
-                    job.get("team", ""),
-                    job.get("employmentType", ""),
-                    job.get("workplaceType", ""),
-                    compensation.get("scrapeableCompensationSalarySummary", ""),
-                    compensation.get("compensationTierSummary", ""),
-                    board.get("display_name", ""),
-                ),
-                "link": clean_text(str(job.get("jobUrl", "") or job.get("applyUrl", ""))),
-            }
-        )
+        while True:
+            payload = fetch_json(
+                f"{base_url}/v0/postings/{board['site']}?mode=json&limit={BOARD_PAGE_LIMIT}&skip={skip}"
+            )
+            jobs = payload if isinstance(payload, list) else []
+            if not jobs:
+                break
 
-    return items
+            for job in jobs:
+                if not isinstance(job, dict):
+                    continue
+                categories = job.get("categories", {}) if isinstance(job.get("categories"), dict) else {}
+                salary_range = job.get("salaryRange", {}) if isinstance(job.get("salaryRange"), dict) else {}
+                salary = format_provider_salary_text(
+                    salary_range.get("min"),
+                    salary_range.get("max"),
+                    salary_range.get("currency"),
+                    str(salary_range.get("interval", "year")).replace("_", " "),
+                )
+                items.append(
+                    JobLead(
+                        title=clean_text(str(job.get("text", ""))),
+                        description=join_text_parts(
+                            job.get("descriptionPlain", ""),
+                            job.get("descriptionBodyPlain", ""),
+                            job.get("additionalPlain", ""),
+                            categories.get("team", ""),
+                            categories.get("department", ""),
+                            categories.get("location", ""),
+                            job.get("salaryDescriptionPlain", ""),
+                        ),
+                        location=categories.get("location", ""),
+                        company=board.get("display_name", ""),
+                        source="Lever",
+                        salary=salary,
+                        employment_type=categories.get("commitment", ""),
+                        link=clean_text(str(job.get("hostedUrl", "") or job.get("applyUrl", ""))),
+                    )
+                )
+
+            if len(jobs) < BOARD_PAGE_LIMIT:
+                break
+            skip += BOARD_PAGE_LIMIT
+
+        return items
 
 
-def fetch_workable_board_jobs(board: dict[str, object]) -> list[dict[str, str]]:
-    subdomain = str(board["account_subdomain"])
-    mode = normalize_text(str(board.get("mode", "public"))) or "public"
-
-    if mode == "spi":
-        token_env = clean_text(str(board.get("api_token_env", "")))
-        token = os.environ.get(token_env, "").strip() if token_env else ""
-        if not token:
-            raise ValueError(f"Workable board {board['name']} requires env var {token_env or 'api_token_env'}")
+class AshbySource(Source):
+    def fetch(self) -> list[JobLead]:
+        board = self.config
         payload = fetch_json(
-            f"https://{subdomain}.workable.com/spi/v3/jobs",
-            headers={"Authorization": f"Bearer {token}"},
+            f"https://api.ashbyhq.com/posting-api/job-board/{board['job_board_name']}?includeCompensation=true"
         )
-    else:
-        payload = fetch_json(f"https://www.workable.com/api/accounts/{subdomain}?details=true")
+        jobs = payload.get("jobs", []) if isinstance(payload, dict) else []
+        items = []
 
-    jobs = payload.get("jobs", []) if isinstance(payload, dict) else payload if isinstance(payload, list) else []
-    items = []
+        for job in jobs:
+            if not isinstance(job, dict):
+                continue
+            if job.get("isListed") is False:
+                continue
+            compensation = job.get("compensation", {}) if isinstance(job.get("compensation"), dict) else {}
+            items.append(
+                JobLead(
+                    title=clean_text(str(job.get("title", ""))),
+                    description=join_text_parts(
+                        job.get("descriptionPlain", ""),
+                        job.get("department", ""),
+                        job.get("team", ""),
+                        job.get("workplaceType", ""),
+                        compensation.get("scrapeableCompensationSalarySummary", ""),
+                        compensation.get("compensationTierSummary", ""),
+                    ),
+                    location=job.get("location", ""),
+                    company=board.get("display_name", ""),
+                    source="Ashby",
+                    salary="",
+                    employment_type=job.get("employmentType", ""),
+                    link=clean_text(str(job.get("jobUrl", "") or job.get("applyUrl", ""))),
+                )
+            )
 
-    for job in jobs:
-        if not isinstance(job, dict):
-            continue
-        location = job.get("location", {}) if isinstance(job.get("location"), dict) else {}
-        salary = job.get("salary", {}) if isinstance(job.get("salary"), dict) else {}
-        items.append(
-            {
-                "title": clean_text(str(job.get("title", "") or job.get("full_title", ""))),
-                "description": join_text_parts(
-                    job.get("description", ""),
-                    job.get("description_plain", ""),
-                    location.get("location_str", ""),
-                    location.get("country", ""),
-                    location.get("city", ""),
-                    location.get("workplace_type", ""),
-                    job.get("department", ""),
-                    format_provider_salary_text(
+        return items
+
+
+class WorkableSource(Source):
+    def fetch(self) -> list[JobLead]:
+        board = self.config
+        subdomain = str(board["account_subdomain"])
+        mode = normalize_text(str(board.get("mode", "public"))) or "public"
+
+        if mode == "spi":
+            token_env = clean_text(str(board.get("api_token_env", "")))
+            token = os.environ.get(token_env, "").strip() if token_env else ""
+            if not token:
+                raise ValueError(f"Workable board {board['name']} requires env var {token_env or 'api_token_env'}")
+            payload = fetch_json(
+                f"https://{subdomain}.workable.com/spi/v3/jobs",
+                headers={"Authorization": f"Bearer {token}"},
+            )
+        else:
+            payload = fetch_json(f"https://www.workable.com/api/accounts/{subdomain}?details=true")
+
+        jobs = payload.get("jobs", []) if isinstance(payload, dict) else payload if isinstance(payload, list) else []
+        items = []
+
+        for job in jobs:
+            if not isinstance(job, dict):
+                continue
+            loc = job.get("location", {}) if isinstance(job.get("location"), dict) else {}
+            salary = job.get("salary", {}) if isinstance(job.get("salary"), dict) else {}
+            items.append(
+                JobLead(
+                    title=clean_text(str(job.get("title", "") or job.get("full_title", ""))),
+                    description=join_text_parts(
+                        job.get("description", ""),
+                        job.get("description_plain", ""),
+                        loc.get("workplace_type", ""),
+                        job.get("department", ""),
+                    ),
+                    location=join_text_parts(loc.get("location_str", ""), loc.get("city", ""), loc.get("country", "")),
+                    company=board.get("display_name", ""),
+                    source="Workable",
+                    salary=format_provider_salary_text(
                         salary.get("salary_from"),
                         salary.get("salary_to"),
                         salary.get("salary_currency"),
                         "year",
                     ),
-                    board.get("display_name", ""),
-                ),
-                "link": clean_text(
-                    str(job.get("application_url", "") or job.get("url", "") or job.get("shortlink", ""))
-                ),
-            }
-        )
+                    employment_type="",
+                    link=clean_text(
+                        str(job.get("application_url", "") or job.get("url", "") or job.get("shortlink", ""))
+                    ),
+                )
+            )
 
-    return items
+        return items
 
 
-def fetch_company_board_items(board: dict[str, object]) -> list[dict[str, str]]:
-    """
-    Fetch job openings for a specific company board using the required backend handler.
+def create_source(source_config: dict[str, object]) -> Source:
+    platform = str(source_config.get("platform", ""))
+    if platform == "greenhouse":
+        return GreenhouseSource(source_config)
+    if platform == "lever":
+        return LeverSource(source_config)
+    if platform == "ashby":
+        return AshbySource(source_config)
+    if platform == "workable":
+        return WorkableSource(source_config)
+    if platform == "generic_html":
+        return GenericHtmlSource(source_config)
 
-    Args:
-        board: A single company board dictionary containing normalized configuration.
+    source_type = str(source_config.get("type", ""))
+    if source_type == "efc_html":
+        return EfcHtmlSource(source_config)
 
-    Returns:
-        A list of dictionaries representing the fetched job items.
-    """
+    return RssSource(source_config)
+
+
+# ---------------------------------------------------------------------------
+# Backward-compatible module-level shims
+# Tests and legacy call-sites use these standalone names.
+# ---------------------------------------------------------------------------
+
+
+def parse_feed_items(xml_text: str, display_name: str = "") -> list[JobLead]:
+    """Try structured parse first, fall back to regex parse on error."""
+    try:
+        return parse_structured_feed(xml_text, display_name)
+    except ElementTree.ParseError:
+        sanitized = sanitize_xml(xml_text)
+        try:
+            return parse_structured_feed(sanitized, display_name)
+        except ElementTree.ParseError:
+            items = parse_fallback_feed(sanitized, display_name)
+            if items:
+                return items
+            raise
+
+
+def parse_efinancialcareers_html(html_text: str, source: dict[str, object]) -> list[JobLead]:
+    """Parse eFinancialCareers HTML page and return JobLead items."""
+    cfg = {"url": "", "display_name": "", "name": "", **source}
+    src = EfcHtmlSource(cfg)
+    # Monkeypatch fetch to return the supplied html_text directly
+    import unittest.mock as _mock
+
+    with _mock.patch("jobbot.sources.fetch_feed", return_value=html_text):
+        return src.fetch()
+
+
+def fetch_greenhouse_board_jobs(board: dict[str, object]) -> list[JobLead]:
+    return GreenhouseSource(board).fetch()
+
+
+def fetch_lever_board_jobs(board: dict[str, object]) -> list[JobLead]:
+    return LeverSource(board).fetch()
+
+
+def fetch_ashby_board_jobs(board: dict[str, object]) -> list[JobLead]:
+    return AshbySource(board).fetch()
+
+
+def fetch_workable_board_jobs(board: dict[str, object]) -> list[JobLead]:
+    return WorkableSource(board).fetch()
+
+
+_PLATFORM_HANDLERS: dict[str, type] = {
+    "greenhouse": GreenhouseSource,
+    "lever": LeverSource,
+    "ashby": AshbySource,
+    "workable": WorkableSource,
+    "generic_html": GenericHtmlSource,
+}
+
+
+def fetch_company_board_items(board: dict[str, object]) -> list[JobLead]:
+    """Dispatch to the correct handler based on the board platform."""
     platform = str(board.get("platform", ""))
-
-    handlers = {
-        "greenhouse": fetch_greenhouse_board_jobs,
-        "lever": fetch_lever_board_jobs,
-        "ashby": fetch_ashby_board_jobs,
-        "workable": fetch_workable_board_jobs,
-        "generic_html": fetch_generic_html_board_jobs,
-    }
-
-    handler = handlers.get(platform)
-    if handler:
-        return handler(board)
+    if platform == "greenhouse":
+        return fetch_greenhouse_board_jobs(board)
+    if platform == "lever":
+        return fetch_lever_board_jobs(board)
+    if platform == "ashby":
+        return fetch_ashby_board_jobs(board)
+    if platform == "workable":
+        return fetch_workable_board_jobs(board)
+    if platform == "generic_html":
+        return GenericHtmlSource(board).fetch()
     return []
-    raise ValueError(f"Unsupported board platform: {platform}")
+
+
+def parse_source_items(source: dict[str, object], xml_raw: str) -> list[JobLead]:
+    """Parse raw XML/HTML for a non-board (RSS/EFC) source."""
+    source_type = str(source.get("type", ""))
+    display_name = str(source.get("display_name", "") or source.get("name", ""))
+    if source_type == "efc_html":
+        return parse_efinancialcareers_html(xml_raw, source)
+    return parse_feed_items(xml_raw, display_name)

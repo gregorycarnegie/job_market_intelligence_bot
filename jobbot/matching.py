@@ -49,6 +49,7 @@ from jobbot.common import (
     stronger_company_control,
     truncate_text,
 )
+from jobbot.models import JobLead
 
 
 def normalize_application_record(payload: dict[str, object]) -> dict[str, object] | None:
@@ -746,7 +747,7 @@ def _apply_salary_preferences(raw_title: str, raw_desc: str, prefs: dict[str, ob
 
 
 def score_job(
-    item: dict[str, str],
+    item: JobLead,
     source_label: str,
     profile: dict[str, object],
     search_config: dict[str, object],
@@ -758,7 +759,7 @@ def score_job(
     Score a job item and generate a candidate profile based on skills, role fit, and preferences.
 
     Args:
-        item: The job posting (requires 'title', 'description', 'link').
+        item: The structured job posting representation.
         source_label: The source of the job posting (e.g. greenhouse).
         profile: Dictionary containing user target profiles and preferences.
         search_config: Config for search logic and company overrides.
@@ -769,12 +770,15 @@ def score_job(
     Returns:
         A dict containing qualification status, score, reasons, and a candidate object.
     """
-    raw_title = clean_text(item["title"])
-    raw_desc = clean_text(item["description"])
-    role_title, company = split_title_and_company(raw_title)
-    normalized_title = normalize_text(role_title or raw_title)
+    raw_title = clean_text(item.title)
+    raw_desc = clean_text(item.description)
+    company = clean_text(item.company)
+    if not company:
+        _, company = split_title_and_company(raw_title)
+
+    normalized_title = normalize_text(raw_title)
     normalized_desc = normalize_text(raw_desc)
-    normalized_full_text = normalize_text(f"{raw_title} {raw_desc}")
+    normalized_full_text = normalize_text(f"{raw_title} {raw_desc} {item.location} {item.employment_type}")
     reasons: list[str] = []
 
     prefs = profile["prefs"]
@@ -842,7 +846,7 @@ def score_job(
     score = apply_feedback_adjustments(score, reasons, source_label, feedback_keywords, feedback_profile)
     application_materials = build_application_materials(
         profile,
-        role_title or raw_title,
+        raw_title,
         company_name,
         score,
         company_preferences,
@@ -855,7 +859,7 @@ def score_job(
         "time": current_run_ts,
         "title": raw_title,
         "description": raw_desc[:1500],
-        "link": clean_text(item["link"]),
+        "link": clean_text(item.link),
         "source": source_label,
         "company": company_name,
         "score": score,

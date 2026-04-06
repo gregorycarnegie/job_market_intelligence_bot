@@ -42,3 +42,26 @@
 - [x] Record outcomes from applications and interviews.
 - [x] Reweight sources and keywords based on interview hit rate.
 - [x] Add periodic cleanup and pruning for long-lived state files.
+
+## Architecture
+
+- [x] Introduce a `JobLead` dataclass with structured fields (`title`, `link`, `source`, `company`, `location`, `salary`, `description`, `employment_type`, `date_posted`) to replace the current flat `dict[str, str]` with a concatenated `description` blob.
+- [x] Replace current `fetch_company_board_items` dispatch dict with an abstract `Source` base class (`fetch() -> list[JobLead]`) so every source type (RSS, API, email, HN) is a uniform, pluggable unit.
+- [x] Migrate all existing source handlers (Greenhouse, Lever, Ashby, Workable, generic HTML, RSS feeds) to the new `Source` interface and `JobLead` output before adding new sources.
+- [x] Update `matching.py` and `storage.py` to consume `JobLead` fields directly instead of pattern-matching against the flat description string.
+
+## Free Job API Sources
+
+- [ ] Add Reed.co.uk API ingestion (UK/London specialist, clean salary bands, direct apply URLs — register at reed.co.uk/developers).
+- [ ] Add Adzuna API ingestion (UK aggregator, salary trends, company data — register at developer.adzuna.com).
+- [ ] Add Jooble API ingestion (global aggregator with heavy ATS coverage — key via RapidAPI or jooble.org developer portal).
+- [ ] Add The Muse API ingestion (tech/modern companies, filter by category and level — themuse.com/developers/api/v2, no key needed up to 500 req/hr).
+- [ ] Add Arbeitnow API ingestion (tech-heavy, EU/remote, visa sponsorship flags — no API key needed, hit arbeitnow.com/api/job-board-api).
+- [ ] Switch Remotive source from RSS to JSON API (no key needed — remotive.com/api/remote-jobs?category=software-dev).
+
+## Free Job Sources (Non-API)
+
+- [ ] Add email inbox parsing via IMAP (dedicated Gmail account for job alerts from LinkedIn, Indeed, Otta — use imaplib + BeautifulSoup to extract jobs from alert emails).
+- [ ] Add Hacker News "Who is Hiring" ingestion (monthly thread on first weekday — parse via Hacker News Firebase API at hacker-news.firebaseio.com/v0/, filter for London/UK/hybrid keywords).
+- [ ] Add Discord job channel monitoring (join UK tech community servers, listen to #jobs channels via discord.py — requires permission from server admins).
+- [ ] Add Slack job channel monitoring (join Tech London Slack and similar, monitor #jobs/#careers channels via Slack API).

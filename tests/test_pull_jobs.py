@@ -9,6 +9,7 @@ from unittest import mock
 
 import pull_jobs
 from jobbot import storage as jobbot_storage
+from jobbot.models import JobLead
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 RESUME_PATH = REPO_ROOT / "resume.json"
@@ -47,14 +48,14 @@ class PullJobsTestCase(unittest.TestCase):
             }
         )
         lockouts = ["remote us", "us only"]
-        item = {
-            "title": "IT Support Engineer at Monzo",
-            "description": (
+        item = JobLead(
+            title="IT Support Engineer at Monzo",
+            description=(
                 "London hybrid role covering Active Directory, Azure AD, Microsoft 365, "
                 "user onboarding, troubleshooting, and hardware support."
             ),
-            "link": "https://example.com/jobs/monzo-it-support",
-        }
+            link="https://example.com/jobs/monzo-it-support",
+        )
 
         evaluation = pull_jobs.score_job(
             item,
@@ -89,11 +90,11 @@ class PullJobsTestCase(unittest.TestCase):
                 "feedback": {"enabled": False},
             }
         )
-        item = {
-            "title": "IT Support Engineer at Example Recruiter",
-            "description": "London onsite support role with Windows troubleshooting and Microsoft 365.",
-            "link": "https://example.com/jobs/recruiter-it-support",
-        }
+        item = JobLead(
+            title="IT Support Engineer at Example Recruiter",
+            description="London onsite support role with Windows troubleshooting and Microsoft 365.",
+            link="https://example.com/jobs/recruiter-it-support",
+        )
 
         evaluation = pull_jobs.score_job(
             item,
@@ -290,11 +291,11 @@ class PullJobsTestCase(unittest.TestCase):
         self.assertGreater(feedback["keyword_adjustments"].get("active directory", 0), 0)
         self.assertLess(feedback["keyword_adjustments"].get("data engineer", 0), 0)
 
-        item = {
-            "title": "IT Support Engineer at Future Co",
-            "description": "London hybrid role with Active Directory, Microsoft 365, troubleshooting and onboarding.",
-            "link": "https://example.com/future-good",
-        }
+        item = JobLead(
+            title="IT Support Engineer at Future Co",
+            description="London hybrid role with Active Directory, Microsoft 365, troubleshooting and onboarding.",
+            link="https://example.com/future-good",
+        )
         good_eval = pull_jobs.score_job(
             item,
             "good_board",
@@ -564,13 +565,14 @@ class PullJobsTestCase(unittest.TestCase):
                 return detail_page
             raise AssertionError(f"Unexpected URL {url}")
 
-        with mock.patch.object(pull_jobs, "fetch_feed", side_effect=fake_fetch):
-            items = pull_jobs.fetch_generic_html_board_jobs(board)
+        with mock.patch.object(pull_jobs.source_module, "fetch_feed", side_effect=fake_fetch):
+            source = pull_jobs.source_module.create_source(board)
+            items = source.fetch()
 
         self.assertEqual(len(items), 1)
-        self.assertEqual(items[0]["title"], "IT Support Engineer")
-        self.assertIn("Example Co", items[0]["description"])
-        self.assertEqual(items[0]["link"], "https://example.com/careers/it-support-engineer")
+        self.assertEqual(items[0].title, "IT Support Engineer")
+        self.assertIn("Example Co", items[0].description)
+        self.assertEqual(items[0].link, "https://example.com/careers/it-support-engineer")
 
     def test_main_end_to_end_writes_expected_runtime_files(self) -> None:
         self.write_search_config(
@@ -602,7 +604,7 @@ class PullJobsTestCase(unittest.TestCase):
 
         with (
             mock.patch.object(pull_jobs, "FEEDS", test_feeds),
-            mock.patch.object(pull_jobs, "fetch_feed", return_value=feed_xml),
+            mock.patch("jobbot.sources.fetch_feed", return_value=feed_xml),
             mock.patch("jobbot.matching.load_telegram_settings", return_value=("", "", "")),
         ):
             result = pull_jobs.main()
@@ -678,7 +680,7 @@ class PullJobsTestCase(unittest.TestCase):
 
         with (
             mock.patch.object(pull_jobs, "FEEDS", test_feeds),
-            mock.patch.object(pull_jobs, "fetch_feed", side_effect=OSError("boom")),
+            mock.patch("jobbot.sources.fetch_feed", side_effect=OSError("boom")),
             mock.patch("jobbot.matching.load_telegram_settings", return_value=("", "", "")),
         ):
             result = pull_jobs.main()

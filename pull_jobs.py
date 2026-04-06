@@ -137,15 +137,7 @@ extract_link = source_module.extract_link
 extract_description = source_module.extract_description
 parse_structured_feed = source_module.parse_structured_feed
 extract_tag_text = source_module.extract_tag_text
-parse_fallback_feed = source_module.parse_fallback_feed
-parse_feed_items = source_module.parse_feed_items
-parse_efinancialcareers_html = source_module.parse_efinancialcareers_html
-parse_source_items = source_module.parse_source_items
-normalize_company_board = source_module.normalize_company_board
-fetch_greenhouse_board_jobs = source_module.fetch_greenhouse_board_jobs
-fetch_lever_board_jobs = source_module.fetch_lever_board_jobs
-fetch_ashby_board_jobs = source_module.fetch_ashby_board_jobs
-fetch_workable_board_jobs = source_module.fetch_workable_board_jobs
+create_source = source_module.create_source
 
 normalize_application_record = matching.normalize_application_record
 evaluate_location_fit = matching.evaluate_location_fit
@@ -236,21 +228,7 @@ def load_company_boards() -> list[dict[str, object]]:
     return source_module.load_company_boards(COMPANY_BOARDS_FILE)
 
 
-def _call_with_bound_fetch(callback, *args):
-    original_fetch_feed = source_module.fetch_feed
-    source_module.fetch_feed = fetch_feed
-    try:
-        return callback(*args)
-    finally:
-        source_module.fetch_feed = original_fetch_feed
 
-
-def fetch_generic_html_board_jobs(board: dict[str, object]) -> list[dict[str, str]]:
-    return _call_with_bound_fetch(source_module.fetch_generic_html_board_jobs, board)
-
-
-def fetch_company_board_items(board: dict[str, object]) -> list[dict[str, str]]:
-    return _call_with_bound_fetch(source_module.fetch_company_board_items, board)
 
 
 def load_applications_state() -> dict[str, object]:
@@ -334,17 +312,14 @@ def main() -> int:
             continue
 
         try:
-            if source.get("platform"):
-                items = fetch_company_board_items(source)
-            else:
-                xml_raw = fetch_feed(str(source["url"]))
-                items = parse_source_items(source, xml_raw)
+            source_instance = create_source(source)
+            items = source_instance.fetch()
             new_rows = []
             source_label = get_source_display_name(source)
 
             for item in items:
-                link = clean_text(item["link"])
-                fingerprints = build_review_fingerprints(item["title"], item["description"], link)
+                link = clean_text(item.link)
+                fingerprints = build_review_fingerprints(item.title, item.description, link)
                 if (
                     not link
                     or link in existing_links
@@ -368,6 +343,12 @@ def main() -> int:
                     {
                         "time": match["time"],
                         "title": match["title"],
+                        "company": match.get("company", ""),
+                        "location": clean_text(item.location),
+                        "salary": clean_text(item.salary),
+                        "source": source_label,
+                        "employment_type": clean_text(item.employment_type),
+                        "date_posted": clean_text(item.date_posted),
                         "description": match["description"],
                         "link": match["link"],
                     }

@@ -4,7 +4,10 @@ import json
 import sqlite3
 from pathlib import Path
 
-CSV_HEADERS = ["time", "title", "description", "link"]
+CSV_HEADERS = [
+    "time", "title", "company", "location", "salary",
+    "source", "employment_type", "date_posted", "description", "link",
+]
 
 
 def _connect(db_file: str) -> sqlite3.Connection:
@@ -31,7 +34,24 @@ def _initialize_database(connection: sqlite3.Connection) -> None:
         );
 
         CREATE INDEX IF NOT EXISTS idx_jobs_time ON jobs(time);
+        """
+    )
 
+    # Run ALTER TABLE to migrate existing database seamlessly
+    new_columns = [
+        ("company", "TEXT DEFAULT ''"),
+        ("location", "TEXT DEFAULT ''"),
+        ("salary", "TEXT DEFAULT ''"),
+        ("source", "TEXT DEFAULT ''"),
+        ("employment_type", "TEXT DEFAULT ''"),
+        ("date_posted", "TEXT DEFAULT ''")
+    ]
+    for col_name, col_def in new_columns:
+        with contextlib.suppress(sqlite3.OperationalError):
+            connection.execute(f"ALTER TABLE jobs ADD COLUMN {col_name} {col_def}")
+
+    connection.executescript(
+        """
         CREATE TABLE IF NOT EXISTS feed_state (
             name TEXT PRIMARY KEY,
             last_checked_at REAL NOT NULL
@@ -161,12 +181,19 @@ def _index_application(connection: sqlite3.Connection, application: dict[str, ob
 
 
 def load_jobs(db_file: str) -> list[dict[str, str]]:
+    cols = "time, title, description, link, company, location, salary, source, employment_type, date_posted"
     with contextlib.closing(_connect(db_file)) as connection:
-        rows = connection.execute("SELECT time, title, description, link FROM jobs ORDER BY id").fetchall()
+        rows = connection.execute(f"SELECT {cols} FROM jobs ORDER BY id").fetchall()
     return [
         {
             "time": str(row["time"]),
             "title": str(row["title"]),
+            "company": str(row["company"]),
+            "location": str(row["location"]),
+            "salary": str(row["salary"]),
+            "source": str(row["source"]),
+            "employment_type": str(row["employment_type"]),
+            "date_posted": str(row["date_posted"]),
             "description": str(row["description"]),
             "link": str(row["link"]),
         }
@@ -180,8 +207,12 @@ def load_latest_job_batch(db_file: str) -> tuple[str | None, list[dict[str, str]
         if row is None:
             return None, []
         latest_ts = str(row["time"])
+        cols = (
+            "time, title, description, link, company,"
+            " location, salary, source, employment_type, date_posted"
+        )
         batch_rows = connection.execute(
-            "SELECT time, title, description, link FROM jobs WHERE time = ? ORDER BY id",
+            f"SELECT {cols} FROM jobs WHERE time = ? ORDER BY id",
             (latest_ts,),
         ).fetchall()
 
@@ -189,6 +220,12 @@ def load_latest_job_batch(db_file: str) -> tuple[str | None, list[dict[str, str]
         {
             "time": str(batch_row["time"]),
             "title": str(batch_row["title"]),
+            "company": str(batch_row["company"]),
+            "location": str(batch_row["location"]),
+            "salary": str(batch_row["salary"]),
+            "source": str(batch_row["source"]),
+            "employment_type": str(batch_row["employment_type"]),
+            "date_posted": str(batch_row["date_posted"]),
             "description": str(batch_row["description"]),
             "link": str(batch_row["link"]),
         }
@@ -203,8 +240,11 @@ def append_jobs(db_file: str, rows: list[dict[str, str]]) -> None:
     with contextlib.closing(_connect(db_file)) as connection, connection:
         connection.executemany(
             """
-                INSERT OR IGNORE INTO jobs(time, title, description, link)
-                VALUES (?, ?, ?, ?)
+                INSERT OR IGNORE INTO jobs(
+                    time, title, description, link, company,
+                    location, salary, source, employment_type, date_posted
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
             [
                 (
@@ -212,6 +252,12 @@ def append_jobs(db_file: str, rows: list[dict[str, str]]) -> None:
                     str(row.get("title", "")),
                     str(row.get("description", "")),
                     str(row.get("link", "")),
+                    str(row.get("company", "")),
+                    str(row.get("location", "")),
+                    str(row.get("salary", "")),
+                    str(row.get("source", "")),
+                    str(row.get("employment_type", "")),
+                    str(row.get("date_posted", "")),
                 )
                 for row in rows
                 if str(row.get("link", ""))
