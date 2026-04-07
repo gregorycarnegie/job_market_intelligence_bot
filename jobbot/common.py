@@ -5,8 +5,8 @@ import re
 import urllib.request
 from collections.abc import Mapping
 from datetime import datetime, timezone
-from typing import Any, cast
 from pathlib import Path
+from typing import Any, cast
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from jobbot import storage

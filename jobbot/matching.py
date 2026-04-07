@@ -4,8 +4,8 @@ import re
 import uuid
 from collections.abc import Mapping
 from datetime import datetime, timezone
-from typing import Any, cast
 from pathlib import Path
+from typing import Any, cast
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen

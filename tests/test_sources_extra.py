@@ -1,7 +1,7 @@
 import tempfile
 import unittest
 from pathlib import Path
-from typing import Any, cast
+from typing import cast
 from xml.etree import ElementTree
 
 from jobbot import sources
