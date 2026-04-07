@@ -4,7 +4,7 @@ import json
 import sqlite3
 from collections.abc import Sequence
 from pathlib import Path
-from typing import cast
+from typing import Any, cast
 
 CSV_HEADERS = [
     "time", "title", "company", "location", "salary",
@@ -35,12 +35,16 @@ def _connect(db_file: str) -> sqlite3.Connection:
 
 def _initialize_database(connection: sqlite3.Connection) -> None:
     """
-    Create necessary tables and indexes if they do not exist.
+    Create necessary tables and apply any pending schema migrations.
 
     Args:
         connection: An active sqlite3.Connection.
     """
-    connection.executescript(
+    connection.execute("CREATE TABLE IF NOT EXISTS migrations (id INTEGER PRIMARY KEY)")
+    applied = {row["id"] for row in connection.execute("SELECT id FROM migrations").fetchall()}
+
+    migrations = [
+        # 1: Initial core tables and indexes
         """
         CREATE TABLE IF NOT EXISTS jobs (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -49,26 +53,8 @@ def _initialize_database(connection: sqlite3.Connection) -> None:
             description TEXT NOT NULL,
             link TEXT NOT NULL UNIQUE
         );
-
         CREATE INDEX IF NOT EXISTS idx_jobs_time ON jobs(time);
-        """
-    )
 
-    # Run ALTER TABLE to migrate existing database seamlessly
-    new_columns = [
-        ("company", "TEXT DEFAULT ''"),
-        ("location", "TEXT DEFAULT ''"),
-        ("salary", "TEXT DEFAULT ''"),
-        ("source", "TEXT DEFAULT ''"),
-        ("employment_type", "TEXT DEFAULT ''"),
-        ("date_posted", "TEXT DEFAULT ''")
-    ]
-    for col_name, col_def in new_columns:
-        with contextlib.suppress(sqlite3.OperationalError):
-            connection.execute(f"ALTER TABLE jobs ADD COLUMN {col_name} {col_def}")
-
-    connection.executescript(
-        """
         CREATE TABLE IF NOT EXISTS feed_state (
             name TEXT PRIMARY KEY,
             last_checked_at REAL NOT NULL
@@ -85,41 +71,32 @@ def _initialize_database(connection: sqlite3.Connection) -> None:
             position INTEGER NOT NULL,
             fingerprint TEXT PRIMARY KEY
         );
-
-        CREATE INDEX IF NOT EXISTS idx_reviewed_fingerprints_position
-            ON reviewed_fingerprints(position);
+        CREATE INDEX IF NOT EXISTS idx_reviewed_fingerprints_position ON reviewed_fingerprints(position);
 
         CREATE TABLE IF NOT EXISTS alerted_links (
             position INTEGER NOT NULL,
             link TEXT PRIMARY KEY
         );
-
-        CREATE INDEX IF NOT EXISTS idx_alerted_links_position
-            ON alerted_links(position);
+        CREATE INDEX IF NOT EXISTS idx_alerted_links_position ON alerted_links(position);
 
         CREATE TABLE IF NOT EXISTS pending_alerts (
             position INTEGER NOT NULL,
             link TEXT PRIMARY KEY,
             payload_json TEXT NOT NULL
         );
-
-        CREATE INDEX IF NOT EXISTS idx_pending_alerts_position
-            ON pending_alerts(position);
+        CREATE INDEX IF NOT EXISTS idx_pending_alerts_position ON pending_alerts(position);
 
         CREATE TABLE IF NOT EXISTS applications (
             position INTEGER NOT NULL,
             link TEXT PRIMARY KEY,
             payload_json TEXT NOT NULL
         );
-
-        CREATE INDEX IF NOT EXISTS idx_applications_position
-            ON applications(position);
+        CREATE INDEX IF NOT EXISTS idx_applications_position ON applications(position);
 
         CREATE TABLE IF NOT EXISTS application_links (
             link_value TEXT PRIMARY KEY,
             application_link TEXT NOT NULL
         );
-
         CREATE INDEX IF NOT EXISTS idx_application_links_application_link
             ON application_links(application_link);
 
@@ -127,7 +104,6 @@ def _initialize_database(connection: sqlite3.Connection) -> None:
             fingerprint TEXT PRIMARY KEY,
             application_link TEXT NOT NULL
         );
-
         CREATE INDEX IF NOT EXISTS idx_application_fingerprints_application_link
             ON application_fingerprints(application_link);
 
@@ -136,11 +112,37 @@ def _initialize_database(connection: sqlite3.Connection) -> None:
             created_at TEXT NOT NULL,
             pages_json TEXT NOT NULL
         );
-
         CREATE INDEX IF NOT EXISTS idx_telegram_digest_sessions_created_at
             ON telegram_digest_sessions(created_at);
+        """,
+        # 2: Extended job metadata columns
         """
-    )
+        ALTER TABLE jobs ADD COLUMN company TEXT DEFAULT '';
+        ALTER TABLE jobs ADD COLUMN location TEXT DEFAULT '';
+        ALTER TABLE jobs ADD COLUMN salary TEXT DEFAULT '';
+        ALTER TABLE jobs ADD COLUMN source TEXT DEFAULT '';
+        ALTER TABLE jobs ADD COLUMN employment_type TEXT DEFAULT '';
+        ALTER TABLE jobs ADD COLUMN date_posted TEXT DEFAULT '';
+        """,
+        # 3: Consecutive failure tracking for sources
+        """
+        ALTER TABLE feed_state ADD COLUMN consecutive_failures INTEGER DEFAULT 0;
+        """,
+    ]
+
+    for i, sql in enumerate(migrations, start=1):
+        if i in applied:
+            continue
+
+        try:
+            connection.executescript(sql)
+        except sqlite3.OperationalError as exc:
+            # Handle cases where columns might already exist due to previous manual hacks
+            if "duplicate column name" in str(exc).lower():
+                pass
+            else:
+                raise
+        connection.execute("INSERT INTO migrations (id) VALUES (?)", (i,))
 
 
 def _load_scope_metadata(connection: sqlite3.Connection, scope: str) -> dict[str, str]:
@@ -379,22 +381,30 @@ def export_jobs_to_csv(db_file: str, csv_file: str) -> None:
         writer.writerows(rows)
 
 
-def load_feed_state(db_file: str) -> dict[str, dict[str, float]]:
+def load_feed_state(db_file: str) -> dict[str, dict[str, Any]]:
     """
-    Load the state of all job feeds (last checked timestamps).
+    Load the state of all job feeds (last checked timestamps and failure counts).
 
     Args:
         db_file: Path to the database.
 
     Returns:
-        A dictionary mapping feed names to their state.
+        A dictionary mapping feed names to their state (last_checked_at, consecutive_failures).
     """
     with contextlib.closing(_connect(db_file)) as connection:
-        rows = connection.execute("SELECT name, last_checked_at FROM feed_state ORDER BY name").fetchall()
-    return {str(row["name"]): {"last_checked_at": float(row["last_checked_at"])} for row in rows}
+        rows = connection.execute(
+            "SELECT name, last_checked_at, consecutive_failures FROM feed_state ORDER BY name"
+        ).fetchall()
+    return {
+        str(row["name"]): {
+            "last_checked_at": float(row["last_checked_at"]),
+            "consecutive_failures": int(row["consecutive_failures"]),
+        }
+        for row in rows
+    }
 
 
-def save_feed_state(db_file: str, feed_state: dict[str, dict[str, float]]) -> None:
+def save_feed_state(db_file: str, feed_state: dict[str, dict[str, Any]]) -> None:
     """
     Save the state of all job feeds.
 
@@ -405,11 +415,12 @@ def save_feed_state(db_file: str, feed_state: dict[str, dict[str, float]]) -> No
     with contextlib.closing(_connect(db_file)) as connection, connection:
         connection.execute("DELETE FROM feed_state")
         connection.executemany(
-            "INSERT INTO feed_state(name, last_checked_at) VALUES (?, ?)",
+            "INSERT INTO feed_state(name, last_checked_at, consecutive_failures) VALUES (?, ?, ?)",
             [
                 (
                     name,
                     float(state.get("last_checked_at", 0)),
+                    int(state.get("consecutive_failures", 0)),
                 )
                 for name, state in feed_state.items()
             ],

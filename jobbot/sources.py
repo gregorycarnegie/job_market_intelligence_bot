@@ -43,7 +43,24 @@ _RETRY_BACKOFF_BASE = 1.0  # seconds; doubles each attempt
 
 
 def _urlopen_with_retry(request: Request, timeout: int) -> http.client.HTTPResponse:
-    """Wrap urlopen with exponential-backoff retries for transient failures."""
+    """
+    Wrap urlopen with exponential-backoff retries for transient failures.
+
+    Retries on:
+    - HTTP 429 (Rate Limit)
+    - HTTP 500, 502, 503, 504 (Server Errors)
+    - URLError (Network/DNS issues)
+
+    Args:
+        request: The urllib Request object.
+        timeout: Fetch timeout in seconds.
+
+    Returns:
+        The successful Response.
+
+    Raises:
+        HTTPError: If the maximum retry count is reached or a non-retryable error occurs.
+    """
     last_exc: Exception | None = None
     for attempt in range(_MAX_RETRIES):
         try:
@@ -55,7 +72,13 @@ def _urlopen_with_retry(request: Request, timeout: int) -> http.client.HTTPRespo
         except URLError as exc:
             last_exc = exc
         delay = _RETRY_BACKOFF_BASE * (2**attempt)
-        logger.warning("Fetch attempt %d/%d failed (%s); retrying in %.0fs", attempt + 1, _MAX_RETRIES, last_exc, delay)
+        logger.warning(
+            "Fetch attempt %d/%d failed (%s); retrying in %.0ls",
+            attempt + 1,
+            _MAX_RETRIES,
+            last_exc,
+            delay,
+        )
         time.sleep(delay)
     raise last_exc  # type: ignore[misc]
 
@@ -64,8 +87,12 @@ def fetch_feed(url: str) -> str:
     """
     Fetch raw text content from a URL with retries and standard headers.
 
+    Configures standard browser-like headers (User-Agent, Accept-Language) to avoid
+    bot detection by simple filters. Includes exponential-backoff retries for
+    resiliency.
+
     Args:
-        url: The URL to fetch.
+        url: The absolute URL to fetch.
 
     Returns:
         The decoded response body as a string.
@@ -707,12 +734,15 @@ def parse_structured_feed(xml_text: str, display_name: str = "") -> list[JobLead
     """
     Standard XML parsing for RSS and Atom feeds into JobLead objects.
 
+    Iterates through the XML tree looking for common feed items (item, entry, job).
+    Extracts title, link, and description using local-name matching (namespace agnostic).
+
     Args:
-        xml_text: The feed XML.
-        display_name: Source name to attribute to the items.
+        xml_text: The feed XML string.
+        display_name: The human-readable name of the source (e.g. "Indeed").
 
     Returns:
-        List of JobLead objects.
+        A list of standardized JobLead objects.
     """
     root = ElementTree.fromstring(xml_text)
     items = []

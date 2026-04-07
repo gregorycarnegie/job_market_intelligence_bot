@@ -72,7 +72,7 @@
 
 ## Project Hardening (Toward 10/10)
 
-- [ ] **Concurrent Source Fetching**: Implement `ThreadPoolExecutor` in the main fetch loop to run source ingestion in parallel, reducing overall runtime.
-- [ ] **Lightweight Schema Migrations**: Add a `migrations` table to the SQLite database (`version` -> `applied_ddl`) to safely handle database schema upgrades.
-- [ ] **Consecutive Failure Alerting**: Track per-source failure counts in the database and send a Telegram notification if a source fails $N$ times in a row.
-- [ ] **Deep Docstring Audit**: Perform a final pass on the "dense" logic in `matching.py` and `sources.py` to ensure complex scoring and parsing rules are fully documented for onboarding.
+- [x] **Concurrent Source Fetching**: Implement `ThreadPoolExecutor` in the main fetch loop to run source ingestion in parallel, reducing overall runtime.
+- [x] **Lightweight Schema Migrations**: Add a `migrations` table to the SQLite database (`version` -> `applied_ddl`) to safely handle database schema upgrades.
+- [x] **Consecutive Failure Alerting**: Track per-source failure counts in the database and send a Telegram notification if a source fails 10 times in a row.
+- [x] **Deep Docstring Audit**: Perform a final pass on the "dense" logic in `matching.py` and `sources.py` to ensure complex scoring and parsing rules are fully documented for onboarding.

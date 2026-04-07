@@ -215,16 +215,22 @@ def evaluate_location_fit(
     lockouts: list[str],
 ) -> tuple[bool, str]:
     """
-    Evaluate if a job's location fits the user's preferences.
+    Evaluate if a job's location fits the user's preferences based on keyword context.
+
+    This function performs a heuristic analysis of the job's location context (first 1000 characters
+     of the normalized description) to identify if it's remote, hybrid, or onsite. It then
+     compares these attributes against the user's explicit preferences and location whitelist.
 
     Args:
-        normalized_full_text: The full text of the job posting, normalized.
-        preferred_locations: List of preferred geographic locations.
+        normalized_full_text: The full text of the job posting, normalized to lowercase.
+        preferred_locations: List of preferred geographic locations (e.g., ["london", "uk"]).
         prefs: Dictionary containing user preferences (remote, hybrid, onsite, relocation).
-        lockouts: List of geographic terms that should trigger a rejection.
+        lockouts: List of geographic terms that should trigger an immediate rejection
+            (e.g., "us only").
 
     Returns:
-        A tuple of (is_fit, reason_string).
+        A tuple of (is_fit_bool, reason_string).
+        If (False, reason) is returned, the job is disqualified from further scoring.
     """
     location_context = normalized_full_text[:1000]
     is_remote = any(re.search(rf"\b{word}\b", location_context) for word in ["remote", "anywhere", "wfh"])
@@ -361,13 +367,23 @@ def build_salary_info(
 
 def extract_salary_range_gbp(text: str) -> dict[str, object] | None:
     """
-    Extract salary range information from text and convert to GBP.
+    Extract salary range information from text and convert it to a standardized GBP annual format.
+
+    Uses a set of regex patterns to identify currency symbols (£, $, €, etc.), numeric amounts,
+    'k' suffixes, and time cadences (per hour, per day, etc.) in the context of the job posting.
+    Supports both ranges ("£40k - £50k") and single values ("$60 per hour").
+
+    Conversion rules:
+    - Currency: Uses live or fallback rates to convert to GBP.
+    - Cadence: Annualizes hourly/daily/monthly rates based on standard working day/year assumptions.
+    - Sanity Check: Discards low values (e.g., < 1000 for annual) to avoid matching stray numbers.
 
     Args:
-        text: The text to scan for salary information.
+        text: The text to scan for salary information (usually title + description).
 
     Returns:
-        A salary info dictionary or None if no valid salary is found.
+        A salary info dictionary (min_gbp, max_gbp, currency, cadence) or None if no valid
+        salary is detected.
     """
     normalized = clean_text(text).lower().replace(",", "")
     range_patterns = [
@@ -981,19 +997,37 @@ def score_job(
     lockouts: list[str],
 ) -> dict[str, object]:
     """
-    Score a job item and generate a candidate profile based on skills, role fit, and preferences.
+    Score a job lead against the user's profile, keyword preferences, and feedback history.
+
+    This is the core pipeline of the Job Bot. It performs the following steps:
+    1.  **Location Check**: Disqualifies jobs that don't match geographic preferences (Remote/Hybrid/Onsite).
+    2.  **Company Control**: Checks against blacklist (disqualify), whitelist (boost), and priority (shorlist).
+    3.  **Role Alignment**: Matches title and description against target role keywords with weighted boosts.
+    4.  **Skill Match**: Matches technical skills in title (high weight) and description (medium weight).
+    5.  **Competency Match**: Matches broader professional competencies (low weight).
+    6.  **Seniority/Keyword Weights**: Applies global title boosts/penalties (e.g., Senior, Principal, Lead).
+    7.  **Role Profiles**: Applies category-specific profiles (e.g., SysAdmin vs IT Support) for fine-grained ranking.
+    8.  **Salary Preferences**: Applies bonuses for jobs meeting minimum salary or penalties for those below.
+    9.  **Feedback Adjustment**: Applies adjustments learned from the user's historical actions on specific
+        sources or keywords.
+    10. **Material Generation**: Produces "Why this fits" notes and resume bullet suggestions for the final candidate.
 
     Args:
-        item: The structured job posting representation.
-        source_label: The source of the job posting (e.g. greenhouse).
-        profile: Dictionary containing user target profiles and preferences.
-        search_config: Config for search logic and company overrides.
-        feedback_profile: Adaptive feedback model adjusting scores based on user feedback.
-        current_run_ts: Timestamp to assign to generated candidates.
-        lockouts: List of strings/expressions for lockout rules.
+        item: The structured job posting representation (JobLead).
+        source_label: The human-readable name of the source (e.g., "Greenhouse", "WWR").
+        profile: Dictionary containing the user's target skills, roles, and location preferences.
+        search_config: Configuration for global weighting rules and company lists.
+        feedback_profile: The learned feedback model for adaptive scoring.
+        current_run_ts: ISO timestamp for the current sweep.
+        lockouts: Geographic lockout expressions compiled from preferences.
 
     Returns:
-        A dict containing qualification status, score, reasons, and a candidate object.
+        A dictionary containing:
+        - qualified (bool): Whether the final score meets the minimum threshold.
+        - score (int): The total calculated score.
+        - reasons (list): Human-readable explanations for the score.
+        - candidate (dict): A fully realized candidate object for alerting and storage.
+        - match (dict|None): The candidate object if qualified, otherwise None.
     """
     raw_title = clean_text(item.title)
     raw_desc = clean_text(item.description)

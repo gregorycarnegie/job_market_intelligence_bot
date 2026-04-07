@@ -1,3 +1,4 @@
+import concurrent.futures
 import logging
 import os
 from datetime import datetime, timezone
@@ -195,69 +196,118 @@ def main() -> int:
     lockouts = [f"{region} only" for region in regions if region not in preferred_locations]
     lockouts += [f"remote {region}" for region in regions if region not in preferred_locations]
 
-    all_sources: list[dict[str, object]] = [*FEEDS, *company_boards]
-
+    all_sources: list[dict[str, Any]] = [*FEEDS, *company_boards]
+    due_sources = []
+    checked_at = time()
     for source in all_sources:
-        checked_at = time()
-        if not is_feed_due(source, feed_state, checked_at):
-            continue
+        if is_feed_due(source, feed_state, checked_at):
+            due_sources.append(source)
 
-        try:
-            source_instance = create_source(source)
-            items = source_instance.fetch()
-            new_rows = []
-            source_label = get_source_display_name(source)
+    if not due_sources:
+        logger.info("Jobs: No feeds are due for check at this time.")
+    else:
+        def fetch_task(src: dict[str, Any]) -> tuple[dict[str, Any], list[Any] | None, Exception | None]:
+            try:
+                inst = create_source(src)
+                return src, inst.fetch(), None
+            except (ElementTree.ParseError, HTTPError, URLError, OSError, ValueError) as exc:
+                return src, None, exc
 
-            for item in items:
-                link = clean_text(item.link)
-                fingerprints = build_review_fingerprints(item.title, item.description, link)
-                if (
-                    not link
-                    or link in existing_links
-                    or storage.has_any_reviewed_fingerprint(STATE_DB_FILE, fingerprints)
-                ):
-                    continue
+        with concurrent.futures.ThreadPoolExecutor(max_workers=8) as executor:
+            future_to_source = {executor.submit(fetch_task, s): s for s in due_sources}
+            for future in concurrent.futures.as_completed(future_to_source):
+                source, items, exc = future.result()
+                source_label = get_source_display_name(source)
+                source_name = cast(str, source["name"])
 
-                eval = cast(
-                    dict[str, Any],
-                    score_job(item, source_label, profile, search_config, feedback_profile, current_run_ts, lockouts),
-                )
-                storage.append_reviewed_fingerprints(STATE_DB_FILE, fingerprints, MAX_REVIEWED_FINGERPRINTS)
-                reviewed_count += 1
-                if not eval["qualified"]:
-                    candidate = cast(dict[str, object] | None, eval.get("candidate"))
-                    if candidate and cast(int, eval["score"]) >= max(0, MIN_MATCH_SCORE - BORDERLINE_MATCH_MARGIN):
-                        borderline_details.append(candidate)
-                    continue
+                if exc:
+                    source_ref = source.get("url") or source.get("platform") or source_name
+                    logger.warning("skipping %s — %s", source_ref, exc)
 
-                match = cast(dict[str, Any], eval["match"])
-                new_rows.append(
-                    {
-                        "time": match["time"],
-                        "title": match["title"],
-                        "company": match.get("company", ""),
-                        "location": clean_text(item.location),
-                        "salary": clean_text(item.salary),
-                        "source": source_label,
-                        "employment_type": clean_text(item.employment_type),
-                        "date_posted": clean_text(item.date_posted),
-                        "description": match["description"],
-                        "link": match["link"],
+                    # Update failure count
+                    state = feed_state.get(source_name, {"last_checked_at": 0.0, "consecutive_failures": 0})
+                    failures = cast(int, state.get("consecutive_failures", 0)) + 1
+                    feed_state[source_name] = {
+                        "last_checked_at": state.get("last_checked_at", 0.0),
+                        "consecutive_failures": failures,
                     }
-                )
-                match_details.append(cast(dict[str, object], match))
-                if upsert_application_record_in_storage(cast(dict[str, object], match), current_run_ts):
-                    applications_created += 1
-                existing_links.add(link)
-                new_hits += 1
 
-            append_rows(new_rows)
-            feed_state[cast(str, source["name"])] = {"last_checked_at": checked_at}
+                    if failures == 10:
+                        logger.error("Source %s failed 10 times consecutively. Alerting.", source_label)
+                        match_details.append({
+                            "time": current_run_ts,
+                            "title": f"⚠️ Source Failure: {source_label}",
+                            "description": f"The job source '{source_label}' has failed 10 times in a row. "
+                                           "Please check the source URL and integration settings.",
+                            "link": str(source.get("url", "https://github.com/jobbot")),
+                            "source": "System Monitor",
+                            "qualified": True,
+                            "score": 100,
+                        })
+                    continue
 
-        except (ElementTree.ParseError, HTTPError, URLError, OSError, ValueError) as exc:
-            source_ref = source.get("url") or source.get("platform") or source.get("name")
-            logger.warning("skipping %s — %s", source_ref, exc)
-            continue
+                # Success
+                feed_state[source_name] = {
+                    "last_checked_at": checked_at,
+                    "consecutive_failures": 0,
+                }
+
+                if items is None:
+                    continue
+
+                new_rows = []
+                for item in items:
+                    link = clean_text(item.link)
+                    fingerprints = build_review_fingerprints(item.title, item.description, link)
+                    if (
+                        not link
+                        or link in existing_links
+                        or storage.has_any_reviewed_fingerprint(STATE_DB_FILE, fingerprints)
+                    ):
+                        continue
+
+                    eval = cast(
+                        dict[str, Any],
+                        score_job(
+                            item,
+                            source_label,
+                            profile,
+                            search_config,
+                            feedback_profile,
+                            current_run_ts,
+                            lockouts,
+                        ),
+                    )
+                    storage.append_reviewed_fingerprints(STATE_DB_FILE, fingerprints, MAX_REVIEWED_FINGERPRINTS)
+                    reviewed_count += 1
+                    if not eval["qualified"]:
+                        candidate = cast(dict[str, object] | None, eval.get("candidate"))
+                        if candidate and cast(int, eval["score"]) >= max(0, MIN_MATCH_SCORE - BORDERLINE_MATCH_MARGIN):
+                            borderline_details.append(candidate)
+                        continue
+
+                    match = cast(dict[str, Any], eval["match"])
+                    new_rows.append(
+                        {
+                            "time": match["time"],
+                            "title": match["title"],
+                            "company": match.get("company", ""),
+                            "location": clean_text(item.location),
+                            "salary": clean_text(item.salary),
+                            "source": source_label,
+                            "employment_type": clean_text(item.employment_type),
+                            "date_posted": clean_text(item.date_posted),
+                            "description": match["description"],
+                            "link": match["link"],
+                        }
+                    )
+                    match_details.append(cast(dict[str, object], match))
+                    if upsert_application_record_in_storage(cast(dict[str, object], match), current_run_ts):
+                        applications_created += 1
+                    existing_links.add(link)
+                    new_hits += 1
+
+                append_rows(new_rows)
 
     save_feed_state(feed_state)
     save_matches_snapshot(current_run_ts, match_details)

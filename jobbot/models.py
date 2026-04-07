@@ -6,18 +6,21 @@ from dataclasses import dataclass
 @dataclass
 class JobLead:
     """
-    Structured representation of a job listing from any source.
+    Standardized data model representing a single job posting retrieved from a source.
+
+    This dataclass ensures that all job leads, regardless of their origin (RSS, JSON, HTML, etc.),
+    follow a consistent structure for scoring and storage.
 
     Attributes:
-        title: The job title.
-        link: The direct URL to the job listing.
-        source: The name of the source platform.
-        company: The hiring company name.
-        location: Job location.
-        salary: Salary information.
-        description: Full or snippet description.
-        employment_type: Type of employment (e.g. full-time).
-        date_posted: The date the job was posted.
+        title (str): The job title as provided by the source.
+        link (str): The canonical URL to the job listing or application page.
+        source (str): The common name of the source platform (e.g., "Greenhouse").
+        company (str): The name of the hiring organization.
+        location (str): Geographic or remote status string.
+        salary (str): Raw salary or compensation text.
+        description (str): The main body text of the job posting.
+        employment_type (str): Category of employment (Full-time, Contract, etc.).
+        date_posted (str): ISO or relative date string when the job was published.
     """
     title: str
     link: str
@@ -53,7 +56,10 @@ class Source(abc.ABC):
     """
     Abstract base class for all job source implementations.
 
-    Subclasses must implement the 'fetch' method to retrieve job leads.
+    A Source implementation is responsible for interacting with a specific platform's
+    API or web interface to retrieve a list of JobLead objects.
+
+    Subclasses must implement the 'fetch' method.
     """
 
     def __init__(self, config: Mapping[str, object]):
@@ -61,7 +67,7 @@ class Source(abc.ABC):
         Initialize the source with a configuration mapping.
 
         Args:
-            config: A mapping containing source-specific settings.
+            config: A dictionary containing source-specific settings (URLs, API keys, etc.).
         """
         self.config = config
 

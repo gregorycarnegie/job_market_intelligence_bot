@@ -696,7 +696,8 @@ class PullJobsTestCase(unittest.TestCase):
 
         self.assertEqual(result, 0)
         feed_state = json.loads(Path("feed_state.json").read_text(encoding="utf-8"))
-        self.assertEqual(feed_state, {})
+        self.assertEqual(feed_state["failing_feed"]["consecutive_failures"], 1)
+        self.assertEqual(feed_state["failing_feed"]["last_checked_at"], 0.0)
 
         matches = json.loads(Path("matches.json").read_text(encoding="utf-8"))
         self.assertEqual(matches["match_count"], 0)
