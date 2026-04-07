@@ -29,6 +29,8 @@ from jobbot.common import (
     STATE_DB_FILE,
     USER_AGENT,
     PatternEntry,
+    ResumeProfile,
+    SearchConfig,
     append_reason,
     atomic_write_json,
     build_focus_phrases,
@@ -487,7 +489,7 @@ def apply_weight_map(text: str, weights: dict[str, int], reasons: list[str], pre
     return sum(weights[phrase] for phrase in matched_phrases)
 
 
-def evaluate_company_preferences(company_name: str, search_config: dict[str, object]) -> dict[str, object]:
+def evaluate_company_preferences(company_name: str, search_config: SearchConfig) -> dict[str, object]:
     """
     Evaluate if a company is blacklisted, whitelisted, or on the priority shortlist.
 
@@ -541,7 +543,7 @@ def evaluate_company_preferences(company_name: str, search_config: dict[str, obj
 def evaluate_role_profile(
     normalized_title: str,
     normalized_desc: str,
-    search_config: dict[str, object],
+    search_config: SearchConfig,
 ) -> dict[str, object] | None:
     """
     Identify the best-fitting role profile for a job based on target patterns.
@@ -582,7 +584,7 @@ def evaluate_role_profile(
 
 
 def select_resume_evidence(
-    profile: dict[str, object], focus_phrases: list[str], limit: int = 3
+    profile: ResumeProfile, focus_phrases: list[str], limit: int = 3
 ) -> list[dict[str, Any]]:
     """
     Select the most relevant experience entries from a profile for a given role.
@@ -709,7 +711,7 @@ def build_resume_bullet_suggestions(evidence_entries: list[dict[str, object]]) -
 
 
 def build_intro_message(
-    profile: dict[str, object],
+    profile: ResumeProfile,
     role_title: str,
     company_name: str,
     skill_focus_phrases: list[str],
@@ -757,7 +759,7 @@ def build_intro_message(
 
 
 def build_application_materials(
-    profile: dict[str, object],
+    profile: ResumeProfile,
     role_title: str,
     company_name: str,
     score: int,
@@ -987,11 +989,100 @@ def _apply_salary_preferences(raw_title: str, raw_desc: str, prefs: dict[str, ob
     return score
 
 
+def _apply_role_profile_score(
+    normalized_title: str,
+    normalized_desc: str,
+    search_config: SearchConfig,
+    reasons: list[str],
+) -> tuple[int, dict[str, object]]:
+    """
+    Evaluate the best-matching role profile and return its score delta and a normalised match dict.
+
+    Returns a zero-delta empty match dict when no profile matches, so callers can always use the
+    same field access pattern regardless of whether a profile was found.
+
+    Args:
+        normalized_title: Lower-cased, cleaned job title.
+        normalized_desc: Lower-cased, cleaned job description.
+        search_config: Processed search configuration containing compiled role profile patterns.
+        reasons: Mutable list to which a human-readable profile reason is appended on a match.
+
+    Returns:
+        Tuple of (score_delta, role_profile_match_dict).
+    """
+    match = evaluate_role_profile(normalized_title, normalized_desc, search_config)
+    if match:
+        rp_title_matches = cast(list[str], match["title_matches"])
+        rp_desc_matches = cast(list[str], match["description_matches"])
+        parts: list[str] = []
+        if rp_title_matches:
+            parts.append(f"title: {', '.join(rp_title_matches)}")
+        if rp_desc_matches:
+            parts.append(f"description: {', '.join(rp_desc_matches)}")
+        append_reason(reasons, f"role profile {match['display_name']}: {'; '.join(parts)}")
+        return safe_int(match["score_delta"], 0), match
+    return 0, {"name": "", "display_name": "", "score_delta": 0, "title_matches": [], "description_matches": []}
+
+
+def _build_candidate_record(
+    item: JobLead,
+    source_label: str,
+    raw_title: str,
+    raw_desc: str,
+    company_name: str,
+    score: int,
+    reasons: list[str],
+    company_preferences: dict[str, object],
+    role_profile_match: dict[str, object],
+    application_materials: dict[str, object],
+    feedback_keywords: list[str],
+    current_run_ts: str,
+) -> dict[str, object]:
+    """
+    Assemble the final candidate record dict from all computed scoring artefacts.
+
+    Args:
+        item: Original JobLead being scored.
+        source_label: Human-readable source name.
+        raw_title: Cleaned job title.
+        raw_desc: Cleaned job description (truncated to 1500 chars in the returned record).
+        company_name: Resolved company name.
+        score: Final composite score.
+        reasons: Up to 6 human-readable scoring reasons.
+        company_preferences: Output from evaluate_company_preferences.
+        role_profile_match: Output from _apply_role_profile_score.
+        application_materials: Output from build_application_materials.
+        feedback_keywords: Keywords used for feedback learning.
+        current_run_ts: ISO timestamp for this run.
+
+    Returns:
+        A flat candidate dictionary ready for alerting and storage.
+    """
+    return {
+        "time": current_run_ts,
+        "title": raw_title,
+        "description": raw_desc[:1500],
+        "link": clean_text(item.link),
+        "source": source_label,
+        "company": company_name,
+        "score": score,
+        "reasons": reasons[:6],
+        "shortlisted": bool(company_preferences["shortlisted"]),
+        "company_control": str(company_preferences["control"]),
+        "role_profile": str(role_profile_match["display_name"] or role_profile_match["name"]),
+        "why_this_fits": application_materials["why_this_fits"],
+        "resume_bullet_suggestions": application_materials["resume_bullet_suggestions"],
+        "intro_message": application_materials["intro_message"],
+        "application_ready": bool(application_materials["application_ready"]),
+        "feedback_keywords": feedback_keywords,
+    }
+
+
 def score_job(
     item: JobLead,
     source_label: str,
-    profile: dict[str, object],
-    search_config: dict[str, object],
+    profile: ResumeProfile,
+    search_config: SearchConfig,
     feedback_profile: dict[str, object],
     current_run_ts: str,
     lockouts: list[str],
@@ -1040,12 +1131,11 @@ def score_job(
     normalized_full_text = normalize_text(f"{raw_title} {raw_desc} {item.location} {item.employment_type}")
     reasons: list[str] = []
 
-    _PatternList = list[tuple[str, re.Pattern[str]]]
-    prefs = cast(dict[str, object], profile["prefs"])
-    preferred_locations = cast(list[str], profile["preferred_locations"])
-    target_role_entries = cast(_PatternList, profile["target_role_entries"])
-    skill_entries = cast(_PatternList, profile["skill_entries"])
-    competency_entries = cast(_PatternList, profile["competency_entries"])
+    prefs = profile["prefs"]
+    preferred_locations = profile["preferred_locations"]
+    target_role_entries = profile["target_role_entries"]
+    skill_entries = profile["skill_entries"]
+    competency_entries = profile["competency_entries"]
 
     location_ok, location_reason = evaluate_location_fit(normalized_full_text, preferred_locations, prefs, lockouts)
     append_reason(reasons, location_reason)
@@ -1076,27 +1166,10 @@ def score_job(
 
     score += _apply_title_weights(normalized_title, reasons)
 
-    role_profile_match = evaluate_role_profile(normalized_title, normalized_desc, search_config)
-    if role_profile_match:
-        score += safe_int(role_profile_match["score_delta"], 0)
-        role_profile_reason_parts = []
-        rp_title_matches = cast(list[str], role_profile_match["title_matches"])
-        rp_desc_matches = cast(list[str], role_profile_match["description_matches"])
-        if rp_title_matches:
-            role_profile_reason_parts.append(f"title: {', '.join(rp_title_matches)}")
-        if rp_desc_matches:
-            role_profile_reason_parts.append(f"description: {', '.join(rp_desc_matches)}")
-        append_reason(
-            reasons, f"role profile {role_profile_match['display_name']}: {'; '.join(role_profile_reason_parts)}"
-        )
-    else:
-        role_profile_match = {
-            "name": "",
-            "display_name": "",
-            "score_delta": 0,
-            "title_matches": [],
-            "description_matches": [],
-        }
+    rp_delta, role_profile_match = _apply_role_profile_score(
+        normalized_title, normalized_desc, search_config, reasons
+    )
+    score += rp_delta
 
     score += _apply_salary_preferences(raw_title, raw_desc, prefs, reasons)
 
@@ -1117,24 +1190,20 @@ def score_job(
         skill_focus_phrases,
     )
 
-    candidate = {
-        "time": current_run_ts,
-        "title": raw_title,
-        "description": raw_desc[:1500],
-        "link": clean_text(item.link),
-        "source": source_label,
-        "company": company_name,
-        "score": score,
-        "reasons": reasons[:6],
-        "shortlisted": bool(company_preferences["shortlisted"]),
-        "company_control": str(company_preferences["control"]),
-        "role_profile": str(role_profile_match["display_name"] or role_profile_match["name"]),
-        "why_this_fits": application_materials["why_this_fits"],
-        "resume_bullet_suggestions": application_materials["resume_bullet_suggestions"],
-        "intro_message": application_materials["intro_message"],
-        "application_ready": bool(application_materials["application_ready"]),
-        "feedback_keywords": feedback_keywords,
-    }
+    candidate = _build_candidate_record(
+        item,
+        source_label,
+        raw_title,
+        raw_desc,
+        company_name,
+        score,
+        reasons,
+        company_preferences,
+        role_profile_match,
+        application_materials,
+        feedback_keywords,
+        current_run_ts,
+    )
     return {
         "qualified": score >= MIN_MATCH_SCORE,
         "score": score,

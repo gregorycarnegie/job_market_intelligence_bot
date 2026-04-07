@@ -76,3 +76,13 @@
 - [x] **Lightweight Schema Migrations**: Add a `migrations` table to the SQLite database (`version` -> `applied_ddl`) to safely handle database schema upgrades.
 - [x] **Consecutive Failure Alerting**: Track per-source failure counts in the database and send a Telegram notification if a source fails 10 times in a row.
 - [x] **Deep Docstring Audit**: Perform a final pass on the "dense" logic in `matching.py` and `sources.py` to ensure complex scoring and parsing rules are fully documented for onboarding.
+
+## Recommendations (Toward 10/10)
+
+- [x] **Decompose `score_job()`**: Break the 150+ line scoring function into named sub-pipeline helpers (e.g. `_score_salary()`, `_score_skills()`, `_score_location()`) so each concern is independently testable and readable.
+- [x] **Replace `dict[str, object]` with `TypedDict`**: Config dicts passed around `common.py` and `matching.py` use loose `dict[str, object]` types — define `TypedDict` shapes to get real static checking on key access.
+- [x] **Migration rollback**: Add a `down` migration path (or at minimum a pre-migration SQLite backup) so schema changes can be reversed safely without data loss.
+- [x] **Document JSON state files**: Add a short section to the README clarifying the role and lifecycle of each runtime state file (`matches.json`, `daily_digest.json`, `alerts_state.json`, `seen_feeds.json`, etc.) — which are authoritative, which are ephemeral, and which are safe to delete.
+- [x] **Multi-version CI matrix**: Extend `ci.yml` to test against Python 3.11 and 3.12 alongside 3.10 to catch version-specific regressions early.
+- [x] **Coverage badge in README**: Wire `pytest-cov` output to a Shields.io badge so the 85% threshold is visibly enforced at a glance.
+- [x] **CONTRIBUTING.md**: Add a short contributor guide covering dev setup (`uv sync`, running tests, adding a new `Source` subclass) to lower the onboarding barrier.

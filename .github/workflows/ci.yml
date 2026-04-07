@@ -7,11 +7,11 @@ on:
     branches: ["master"]
 
 jobs:
-  test:
+  lint:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      
+
       - name: Install uv
         uses: astral-sh/setup-uv@v5
         with:
@@ -38,8 +38,37 @@ jobs:
       - name: Run Pylint
         run: uv run pylint jobbot
 
+      - name: Audit dependencies
+        run: uv audit
+
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.10", "3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          version: "latest"
+          enable-cache: true
+
+      - name: System Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install dependencies
+        run: uv sync --extra dev
+
       - name: Run Pytest Coverage
         run: uv run pytest --cov=jobbot tests/ --cov-fail-under=85 --cov-report=xml --cov-report=term-missing
 
-      - name: Audit dependencies
-        run: uv audit
+      - name: Upload coverage to Codecov
+        if: matrix.python-version == '3.10'
+        uses: codecov/codecov-action@v4
+        with:
+          files: coverage.xml
+          fail_ci_if_error: false

@@ -1,6 +1,7 @@
 import contextlib
 import csv
 import json
+import shutil
 import sqlite3
 from collections.abc import Sequence
 from pathlib import Path
@@ -37,16 +38,37 @@ def _connect(db_file: str) -> sqlite3.Connection:
     connection.row_factory = sqlite3.Row
     connection.execute("PRAGMA foreign_keys = ON")
     connection.execute("PRAGMA busy_timeout = 5000")
-    _initialize_database(connection)
+    _initialize_database(connection, db_path)
     return connection
 
 
-def _initialize_database(connection: sqlite3.Connection) -> None:
+def _backup_before_migration(db_path: Path) -> None:
+    """
+    Copy the database file to a timestamped backup before the first new migration runs.
+
+    The backup is placed alongside the database as ``<name>.pre_migration.bak``.
+    Silently skips if the file does not exist yet (fresh install).
+
+    Args:
+        db_path: Path to the live SQLite database file.
+    """
+    if not db_path.exists():
+        return
+    backup_path = db_path.with_suffix(".pre_migration.bak")
+    shutil.copy2(db_path, backup_path)
+
+
+def _initialize_database(connection: sqlite3.Connection, db_path: Path) -> None:
     """
     Create necessary tables and apply any pending schema migrations.
 
+    A backup of the database is created before the first unapplied migration
+    runs, so schema changes can be reversed by restoring the ``.pre_migration.bak``
+    file alongside the database.
+
     Args:
         connection: An active sqlite3.Connection.
+        db_path: Filesystem path to the database file, used for pre-migration backup.
     """
     connection.execute("CREATE TABLE IF NOT EXISTS migrations (id INTEGER PRIMARY KEY)")
     applied = {row["id"] for row in connection.execute("SELECT id FROM migrations").fetchall()}
@@ -137,6 +159,10 @@ def _initialize_database(connection: sqlite3.Connection) -> None:
         ALTER TABLE feed_state ADD COLUMN consecutive_failures INTEGER DEFAULT 0;
         """,
     ]
+
+    pending = [i for i in range(1, len(migrations) + 1) if i not in applied]
+    if pending:
+        _backup_before_migration(db_path)
 
     for i, sql in enumerate(migrations, start=1):
         if i in applied:

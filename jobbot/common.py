@@ -6,7 +6,7 @@ import urllib.request
 from collections.abc import Mapping
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, TypedDict, cast
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from jobbot import storage
@@ -392,6 +392,64 @@ COMPANY_BOARD_REQUIRED_FIELDS = {
 PatternEntry = tuple[str, re.Pattern[str]]
 
 
+class AlertState(TypedDict):
+    """Persistent state for the Telegram alert queue and delivery history."""
+
+    alerted_links: list[str]
+    pending_alerts: list[dict[str, object]]
+    last_run_utc: str
+    last_delivery_utc: str
+    last_delivery_error: str
+
+
+class SeenJobsState(TypedDict):
+    """Persistent state tracking which job fingerprints have already been reviewed."""
+
+    reviewed_fingerprints: list[str]
+    last_run_utc: str
+
+
+class ApplicationsState(TypedDict):
+    """Persistent state for application records and digest/feedback metadata."""
+
+    applications: list[dict[str, object]]
+    last_updated_utc: str
+    last_digest_utc: str
+    last_digest_date_utc: str
+    last_digest_error: str
+    last_feedback_utc: str
+    last_cleanup_utc: str
+
+
+class ResumeProfile(TypedDict):
+    """Pre-processed resume data with compiled pattern entries for matching."""
+
+    resume: dict[str, object]
+    candidate_name: str
+    candidate_title: str
+    resume_summary: str
+    prefs: dict[str, object]
+    preferred_locations: list[str]
+    target_role_entries: list[PatternEntry]
+    skill_entries: list[PatternEntry]
+    competency_entries: list[PatternEntry]
+    experience_entries: list[dict[str, str]]
+
+
+class SearchConfig(TypedDict):
+    """Processed job-search configuration with compiled company-control pattern entries."""
+
+    company_whitelist: list[str]
+    company_blacklist: list[str]
+    priority_companies: list[str]
+    company_whitelist_entries: list[PatternEntry]
+    company_blacklist_entries: list[PatternEntry]
+    priority_company_entries: list[PatternEntry]
+    role_profiles: list[dict[str, object]]
+    daily_digest: dict[str, object]
+    feedback: dict[str, object]
+
+
 def clean_text(text: str) -> str:
     """
     Remove HTML tags and extra whitespace from text.
@@ -595,7 +653,7 @@ def dedupe_preserving_order(values: list[str]) -> list[str]:
     return unique_values
 
 
-def fresh_alert_state() -> dict[str, object]:
+def fresh_alert_state() -> AlertState:
     """
     Initialize a fresh alert state dictionary.
 
@@ -611,7 +669,7 @@ def fresh_alert_state() -> dict[str, object]:
     }
 
 
-def fresh_seen_jobs_state() -> dict[str, object]:
+def fresh_seen_jobs_state() -> SeenJobsState:
     """
     Initialize a fresh seen jobs tracker state.
 
@@ -624,7 +682,7 @@ def fresh_seen_jobs_state() -> dict[str, object]:
     }
 
 
-def fresh_applications_state() -> dict[str, object]:
+def fresh_applications_state() -> ApplicationsState:
     """
     Initialize a fresh applications tracker state.
 
@@ -917,7 +975,7 @@ def build_resume_evidence_entries(resume: dict[str, object]) -> list[dict[str, s
     return entries
 
 
-def load_resume_profile(resume_file: str) -> dict[str, object]:
+def load_resume_profile(resume_file: str) -> ResumeProfile:
     """
     Load a candidate resume from JSON and pre-process it for matching.
 
@@ -1068,7 +1126,7 @@ def _clamp_int(value: object, min_val: int, max_val: int, default: int) -> int:
     return max(min_val, min(max_val, safe_int(value, default)))
 
 
-def load_job_search_config(config_file: str) -> dict[str, object]:
+def load_job_search_config(config_file: str) -> SearchConfig:
     """
     Load the central job search configuration, including thresholds and preferences.
 

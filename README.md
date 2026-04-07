@@ -1,5 +1,8 @@
 # job_market_intelligence_bot
 
+[![CI](https://github.com/gregorycarnegie/job_market_intelligence_bot/actions/workflows/ci.yml/badge.svg)](https://github.com/gregorycarnegie/job_market_intelligence_bot/actions/workflows/ci.yml)
+[![codecov](https://codecov.io/gh/gregorycarnegie/job_market_intelligence_bot/branch/master/graph/badge.svg)](https://codecov.io/gh/gregorycarnegie/job_market_intelligence_bot)
+
 Automated Search for Job Listings in RSS Feeds with self-hosted OpenClaw running on VPS. Offloading all the heavy complex logic to Python (running on OS, without wasting OpenClaw credits) and sharing bare minimum information with OpenClaw, only what's absolutely necessary for its decision making process.
 
 ## 📽️ Step By Step OpenClaw Video Tutorial
@@ -32,6 +35,24 @@ This repository contains several files, part of the job market intelligence mech
 - `feedback_metrics.json`: runtime snapshot of outcome tracking, learned source/keyword adjustments, and cleanup activity.
 
 ![Screenshot of Finished Project - job alerts scheduled and coming in on WhatsApp](https://github.com/user-attachments/assets/e19573a1-a861-467b-8fc5-5657afaa1d19)
+
+## 🗂️ Runtime State Files
+
+All persistent state lives in `jobbot_state.sqlite3` (the authoritative store). The JSON files below are **read-only snapshots** written by `pull_jobs.py` after each run for human inspection or optional AI handoff. Deleting any JSON snapshot is safe — it will be regenerated on the next run. The SQLite database should not be deleted unless you want to reset all history.
+
+| File | Purpose | Safe to delete? |
+| --- | --- | --- |
+| `jobbot_state.sqlite3` | Primary database: matched jobs, review history, alerts, applications, feed state, Telegram sessions. | No — this is the source of truth |
+| `matches.json` | Latest-run snapshot of all scored matches above the threshold. Replaced on every run. | Yes |
+| `desc.json` | Most recent matched batch staged for OpenClaw review. Replaced on every run. | Yes |
+| `seen_jobs_state.json` | Legacy flat-file mirror of reviewed fingerprints. Kept for backwards compatibility; SQLite is authoritative. | Yes |
+| `alerts_state.json` | Legacy flat-file mirror of alert queue and delivery history. SQLite is authoritative. | Yes |
+| `applications.json` | Legacy flat-file mirror of application records. SQLite is authoritative. | Yes |
+| `feed_state.json` | Legacy flat-file mirror of per-feed poll timestamps. SQLite is authoritative. | Yes |
+| `daily_digest.json` | Latest daily digest snapshot sent to Telegram. Replaced each digest cycle. | Yes |
+| `application_briefs.json` | Application-ready jobs with generated fit notes, resume bullets, and intro drafts. Replaced on each run. | Yes |
+| `borderline_matches.json` | Near-threshold jobs for optional AI review. Replaced on each run. | Yes |
+| `feedback_metrics.json` | Outcome tracking and learned source/keyword score adjustments. Replaced on each run. | Yes |
 
 ## 🧰 Requirements
 
