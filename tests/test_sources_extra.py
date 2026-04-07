@@ -1,6 +1,7 @@
 import tempfile
 import unittest
 from pathlib import Path
+from typing import Any, cast
 from xml.etree import ElementTree
 
 from jobbot import sources
@@ -156,6 +157,7 @@ class JobpostingNodeToItemTestCase(unittest.TestCase):
         }
         item = sources.jobposting_node_to_item(node, "Acme")
         self.assertIsNotNone(item)
+        assert item is not None
         self.assertEqual(item.title, "IT Support Engineer")
         self.assertEqual(item.link, "https://example.com/jobs/1")
         self.assertIn("Acme", item.description)
@@ -172,12 +174,14 @@ class JobpostingNodeToItemTestCase(unittest.TestCase):
         node = {"title": "Engineer", "name": "Engineer"}
         item = sources.jobposting_node_to_item(node, "Acme", fallback_url="https://example.com/fallback")
         self.assertIsNotNone(item)
+        assert item is not None
         self.assertEqual(item.link, "https://example.com/fallback")
 
     def test_uses_name_field_as_title(self) -> None:
         node = {"name": "IT Technician", "url": "https://example.com/jobs/2"}
         item = sources.jobposting_node_to_item(node, "Acme")
         self.assertIsNotNone(item)
+        assert item is not None
         self.assertEqual(item.title, "IT Technician")
 
 
@@ -240,6 +244,7 @@ class FallbackGenericJobItemTestCase(unittest.TestCase):
         html = "<title>Software Engineer</title><p>" + "X" * 50 + "</p>"
         item = sources.fallback_generic_job_item(html, "https://example.com/job", "Acme")
         self.assertIsNotNone(item)
+        assert item is not None
         self.assertEqual(item.title, "Software Engineer")
         self.assertEqual(item.link, "https://example.com/job")
 
@@ -403,6 +408,7 @@ class NormalizeCompanyBoardTestCase(unittest.TestCase):
         raw = {"name": "Monzo", "platform": "greenhouse", "board_token": "monzo"}
         board = sources.normalize_company_board(raw)
         self.assertIsNotNone(board)
+        assert board is not None
         self.assertEqual(board["name"], "Monzo")
         self.assertEqual(board["platform"], "greenhouse")
         self.assertEqual(board["board_token"], "monzo")
@@ -411,18 +417,21 @@ class NormalizeCompanyBoardTestCase(unittest.TestCase):
         raw = {"name": "Acme", "platform": "lever", "site": "acme-corp"}
         board = sources.normalize_company_board(raw)
         self.assertIsNotNone(board)
+        assert board is not None
         self.assertEqual(board["site"], "acme-corp")
 
     def test_normalizes_ashby_board(self) -> None:
         raw = {"name": "Startup", "platform": "ashby", "job_board_name": "startup"}
         board = sources.normalize_company_board(raw)
         self.assertIsNotNone(board)
+        assert board is not None
         self.assertEqual(board["job_board_name"], "startup")
 
     def test_normalizes_workable_board(self) -> None:
         raw = {"name": "Corp", "platform": "workable", "account_subdomain": "corp"}
         board = sources.normalize_company_board(raw)
         self.assertIsNotNone(board)
+        assert board is not None
         self.assertEqual(board["account_subdomain"], "corp")
 
     def test_normalizes_generic_html_board(self) -> None:
@@ -433,7 +442,8 @@ class NormalizeCompanyBoardTestCase(unittest.TestCase):
         }
         board = sources.normalize_company_board(raw)
         self.assertIsNotNone(board)
-        self.assertIn("blog.example.com", board["allowed_domains"])
+        assert board is not None
+        self.assertIn("blog.example.com", cast(list[str], board["allowed_domains"]))
 
     def test_returns_none_for_missing_name(self) -> None:
         raw = {"platform": "greenhouse", "board_token": "acme"}
@@ -451,12 +461,14 @@ class NormalizeCompanyBoardTestCase(unittest.TestCase):
         raw = {"name": "Acme", "platform": "greenhouse", "board_token": "acme", "min_interval_seconds": 10}
         board = sources.normalize_company_board(raw)
         self.assertIsNotNone(board)
-        self.assertGreaterEqual(board["min_interval_seconds"], 300)
+        assert board is not None
+        self.assertGreaterEqual(cast(int, board["min_interval_seconds"]), 300)
 
     def test_display_name_falls_back_to_name(self) -> None:
         raw = {"name": "Acme Corp", "platform": "greenhouse", "board_token": "acme"}
         board = sources.normalize_company_board(raw)
         self.assertIsNotNone(board)
+        assert board is not None
         self.assertEqual(board["display_name"], "Acme Corp")
 
 

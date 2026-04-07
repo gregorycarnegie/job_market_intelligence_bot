@@ -3,7 +3,9 @@ import json
 import logging
 import re
 import urllib.request
+from collections.abc import Mapping
 from datetime import datetime, timezone
+from typing import Any, cast
 from pathlib import Path
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
@@ -497,7 +499,7 @@ def safe_int(value: object, default: int = 0) -> int:
         int: The parsed integer or the default.
     """
     try:
-        return int(value)
+        return int(value)  # type: ignore[arg-type,call-overload]
     except (TypeError, ValueError):
         return default
 
@@ -584,7 +586,7 @@ def normalize_string_list(values: object, *, lower: bool = False) -> list[str]:
     normalized_values = []
     seen: set[str] = set()
     for value in raw_values:
-        normalized = normalize_text(value) if lower else clean_text(str(value))
+        normalized = normalize_text(str(value)) if lower else clean_text(str(value))
         if normalized and normalized not in seen:
             normalized_values.append(normalized)
             seen.add(normalized)
@@ -750,7 +752,7 @@ def build_resume_evidence_entries(resume: dict[str, object]) -> list[dict[str, s
             }
         )
 
-    for experience in resume.get("experience", []):
+    for experience in cast(list[Any], resume.get("experience", [])):
         if not isinstance(experience, dict):
             continue
         role = clean_text(str(experience.get("role", "")))
@@ -832,14 +834,14 @@ def normalize_role_profile(raw_profile: dict[str, object], index: int) -> dict[s
     display_name = clean_text(str(raw_profile.get("display_name", ""))) or name.replace("_", " ").title()
     title_keywords = raw_profile.get("title_keywords")
     description_keywords = raw_profile.get("description_keywords")
-    shared_keywords = raw_profile.get("keywords")
+    shared_keywords = cast(list[str], raw_profile.get("keywords") or [])
     title_entries = build_pattern_entries(
-        title_keywords if isinstance(title_keywords, list) and title_keywords else shared_keywords or []
+        cast(list[str], title_keywords) if isinstance(title_keywords, list) and title_keywords else shared_keywords
     )
     description_entries = build_pattern_entries(
-        description_keywords
+        cast(list[str], description_keywords)
         if isinstance(description_keywords, list) and description_keywords
-        else shared_keywords or []
+        else shared_keywords
     )
     if not title_entries and not description_entries:
         return None
@@ -893,8 +895,8 @@ def load_job_search_config(config_file: str) -> dict[str, object]:
     whitelist = normalize_company_control_values(raw_data.get("company_whitelist", []))
     blacklist = normalize_company_control_values(raw_data.get("company_blacklist", []))
     priority_companies = normalize_company_control_values(raw_data.get("priority_companies", []))
-    daily_digest = raw_data.get("daily_digest", {}) if isinstance(raw_data.get("daily_digest"), dict) else {}
-    feedback = raw_data.get("feedback", {}) if isinstance(raw_data.get("feedback"), dict) else {}
+    daily_digest = cast(dict[str, object], raw_data.get("daily_digest") if isinstance(raw_data.get("daily_digest"), dict) else {})
+    feedback = cast(dict[str, object], raw_data.get("feedback") if isinstance(raw_data.get("feedback"), dict) else {})
     digest_statuses = [
         status
         for status in normalize_string_list(
@@ -991,9 +993,9 @@ def save_feed_state(feed_state_file: str, feed_state: dict[str, dict[str, float]
     atomic_write_json(Path(feed_state_file), feed_state)
 
 
-def is_feed_due(feed: dict[str, str | int], feed_state: dict[str, dict[str, float]], now_ts: float) -> bool:
-    last_checked_at = feed_state.get(feed["name"], {}).get("last_checked_at", 0)
-    return now_ts - last_checked_at >= int(feed["min_interval_seconds"])
+def is_feed_due(feed: Mapping[str, object], feed_state: dict[str, dict[str, float]], now_ts: float) -> bool:
+    last_checked_at = feed_state.get(str(feed.get("name", "")), {}).get("last_checked_at", 0)
+    return now_ts - last_checked_at >= int(str(feed.get("min_interval_seconds", 0)))
 
 
 def get_source_display_name(source: dict[str, object]) -> str:
@@ -1016,7 +1018,7 @@ def append_rows(csv_file: str, rows: list[dict[str, str]]) -> None:
 def load_seen_jobs_state(seen_jobs_state_file: str) -> dict[str, object]:
     state = storage.load_seen_jobs_state(STATE_DB_FILE)
     state["reviewed_fingerprints"] = dedupe_preserving_order(
-        [clean_text(str(fingerprint)) for fingerprint in state["reviewed_fingerprints"] if clean_text(str(fingerprint))]
+        [clean_text(str(fp)) for fp in cast(list[object], state["reviewed_fingerprints"]) if clean_text(str(fp))]
     )[-MAX_REVIEWED_FINGERPRINTS:]
     return state
 
@@ -1055,7 +1057,7 @@ def load_alert_state(alerts_state_file: str) -> dict[str, object]:
     state = storage.load_alert_state(STATE_DB_FILE)
     pending_alerts = []
     seen_pending_links = set()
-    for payload in state.get("pending_alerts", []):
+    for payload in cast(list[object], state.get("pending_alerts", [])):
         if not isinstance(payload, dict):
             continue
         normalized = normalize_pending_alert(payload)
@@ -1064,7 +1066,7 @@ def load_alert_state(alerts_state_file: str) -> dict[str, object]:
         pending_alerts.append(normalized)
         seen_pending_links.add(normalized["link"])
 
-    alerted_links = [clean_text(str(link)) for link in state.get("alerted_links", []) if clean_text(str(link))]
+    alerted_links = [clean_text(str(link)) for link in cast(list[object], state.get("alerted_links", [])) if clean_text(str(link))]
 
     return {
         "alerted_links": dedupe_preserving_order(alerted_links)[-MAX_ALERTED_LINKS:],
@@ -1142,7 +1144,7 @@ def parse_iso_utc(value: object) -> datetime | None:
     return parsed.astimezone(timezone.utc)
 
 
-def latest_application_timestamp(application: dict[str, object]) -> datetime | None:
+def latest_application_timestamp(application: Mapping[str, object]) -> datetime | None:
     timestamps = [
         parse_iso_utc(application.get("rejected_at_utc", "")),
         parse_iso_utc(application.get("interviewed_at_utc", "")),

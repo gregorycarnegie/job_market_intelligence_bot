@@ -2,7 +2,9 @@ import json
 import os
 import re
 import uuid
+from collections.abc import Mapping
 from datetime import datetime, timezone
+from typing import Any, cast
 from pathlib import Path
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
@@ -52,7 +54,7 @@ from jobbot.common import (
 from jobbot.models import JobLead
 
 
-def normalize_application_record(payload: dict[str, object]) -> dict[str, object] | None:
+def normalize_application_record(payload: Mapping[str, object]) -> dict[str, object] | None:
     title = clean_text(str(payload.get("title", "")))
     link = clean_text(str(payload.get("link", "")))
     description = clean_text(str(payload.get("description", "")))[:1500]
@@ -152,7 +154,7 @@ def load_applications_state(applications_file: str) -> dict[str, object]:
     data = storage.load_applications_state(STATE_DB_FILE)
     applications = []
     seen_keys = set()
-    for payload in data.get("applications", []):
+    for payload in cast(list[object], data.get("applications", [])):
         if not isinstance(payload, dict):
             continue
         normalized = normalize_application_record(payload)
@@ -164,7 +166,7 @@ def load_applications_state(applications_file: str) -> dict[str, object]:
         applications.append(normalized)
         seen_keys.add(dedupe_key)
 
-    state = {
+    state: dict[str, object] = {
         "applications": applications[-MAX_APPLICATION_RECORDS:],
         "last_updated_utc": clean_text(str(data.get("last_updated_utc", ""))),
         "last_digest_utc": clean_text(str(data.get("last_digest_utc", ""))),
@@ -355,7 +357,8 @@ def evaluate_company_preferences(company_name: str, search_config: dict[str, obj
     normalized_company = normalize_company_name(company_name)
     if not normalized_company:
         return {"qualified": True, "score_delta": 0, "reason": "", "control": "none", "shortlisted": False}
-    blacklist_match = find_pattern_matches(normalized_company, search_config["company_blacklist_entries"], limit=1)
+    _PatternList = list[tuple[str, re.Pattern[str]]]
+    blacklist_match = find_pattern_matches(normalized_company, cast(_PatternList, search_config["company_blacklist_entries"]), limit=1)
     if blacklist_match:
         return {
             "qualified": False,
@@ -364,7 +367,7 @@ def evaluate_company_preferences(company_name: str, search_config: dict[str, obj
             "control": "blacklist",
             "shortlisted": False,
         }
-    priority_match = find_pattern_matches(normalized_company, search_config["priority_company_entries"], limit=1)
+    priority_match = find_pattern_matches(normalized_company, cast(_PatternList, search_config["priority_company_entries"]), limit=1)
     if priority_match:
         return {
             "qualified": True,
@@ -373,7 +376,7 @@ def evaluate_company_preferences(company_name: str, search_config: dict[str, obj
             "control": "priority",
             "shortlisted": True,
         }
-    whitelist_match = find_pattern_matches(normalized_company, search_config["company_whitelist_entries"], limit=1)
+    whitelist_match = find_pattern_matches(normalized_company, cast(_PatternList, search_config["company_whitelist_entries"]), limit=1)
     if whitelist_match:
         return {
             "qualified": True,
@@ -392,7 +395,7 @@ def evaluate_role_profile(
 ) -> dict[str, object] | None:
     best_match = None
     best_sort_key = None
-    for profile in search_config["role_profiles"]:
+    for profile in cast(list[dict[str, Any]], search_config["role_profiles"]):
         title_matches = find_pattern_matches(normalized_title, profile["title_entries"], limit=3)
         description_matches = [
             match
@@ -419,8 +422,8 @@ def evaluate_role_profile(
 
 def select_resume_evidence(
     profile: dict[str, object], focus_phrases: list[str], limit: int = 3
-) -> list[dict[str, object]]:
-    experience_entries = list(profile.get("experience_entries", []))
+) -> list[dict[str, Any]]:
+    experience_entries = list(cast(list[Any], profile.get("experience_entries", [])))
     if not experience_entries:
         return []
     focus_entries = build_pattern_entries(focus_phrases)
@@ -585,7 +588,7 @@ def apply_feedback_adjustments(
         return score
     score_delta = 0
     source_key = normalize_text(source_label)
-    source_adjustment = safe_int(feedback_profile["source_adjustments"].get(source_key, 0), 0)
+    source_adjustment = safe_int(cast(dict[str, object], feedback_profile["source_adjustments"]).get(source_key, 0), 0)
     if source_adjustment:
         score_delta += source_adjustment
         append_reason(
@@ -594,15 +597,16 @@ def apply_feedback_adjustments(
             f" {clean_text(source_label)} ({source_adjustment:+d})",
         )
     keyword_adjustments = []
+    keyword_adj_map = cast(dict[str, object], feedback_profile["keyword_adjustments"])
     for keyword in dedupe_preserving_order(feedback_keywords):
-        adjustment = safe_int(feedback_profile["keyword_adjustments"].get(keyword, 0), 0)
+        adjustment = safe_int(keyword_adj_map.get(keyword, 0), 0)
         if adjustment:
             keyword_adjustments.append((keyword, adjustment))
     keyword_adjustments.sort(key=lambda item: (abs(item[1]), item[1], item[0]), reverse=True)
-    selected_adjustments = keyword_adjustments[: int(feedback_profile["keyword_limit"])]
+    selected_adjustments = keyword_adjustments[: int(cast(int, feedback_profile["keyword_limit"]))]
     if selected_adjustments:
         total_keyword_delta = sum(item[1] for item in selected_adjustments)
-        max_keyword_delta = int(feedback_profile["max_keyword_adjustment"])
+        max_keyword_delta = int(cast(int, feedback_profile["max_keyword_adjustment"]))
         total_keyword_delta = max(-max_keyword_delta, min(max_keyword_delta, total_keyword_delta))
         if total_keyword_delta:
             score_delta += total_keyword_delta
@@ -732,7 +736,7 @@ def _apply_salary_preferences(raw_title: str, raw_desc: str, prefs: dict[str, ob
     """
     score = 0
     salary_range = extract_salary_range_gbp(f"{raw_title} {raw_desc}")
-    minimum_salary_gbp = int(prefs.get("minimum_salary_gbp", 0) or 0)
+    minimum_salary_gbp = safe_int(prefs.get("minimum_salary_gbp", 0), 0)
     if salary_range and minimum_salary_gbp:
         salary_min = safe_int(salary_range["min_gbp"])
         salary_max = safe_int(salary_range["max_gbp"])
@@ -781,11 +785,12 @@ def score_job(
     normalized_full_text = normalize_text(f"{raw_title} {raw_desc} {item.location} {item.employment_type}")
     reasons: list[str] = []
 
-    prefs = profile["prefs"]
-    preferred_locations = profile["preferred_locations"]
-    target_role_entries = profile["target_role_entries"]
-    skill_entries = profile["skill_entries"]
-    competency_entries = profile["competency_entries"]
+    _PatternList = list[tuple[str, re.Pattern[str]]]
+    prefs = cast(dict[str, object], profile["prefs"])
+    preferred_locations = cast(list[str], profile["preferred_locations"])
+    target_role_entries = cast(_PatternList, profile["target_role_entries"])
+    skill_entries = cast(_PatternList, profile["skill_entries"])
+    competency_entries = cast(_PatternList, profile["competency_entries"])
 
     location_ok, location_reason = evaluate_location_fit(normalized_full_text, preferred_locations, prefs, lockouts)
     append_reason(reasons, location_reason)
@@ -799,7 +804,7 @@ def score_job(
         append_reason(reasons, str(company_preferences["reason"]))
     if not company_preferences["qualified"]:
         return {"qualified": False, "score": 0, "reasons": reasons}
-    score += int(company_preferences["score_delta"])
+    score += safe_int(company_preferences["score_delta"], 0)
 
     tr_score, target_title_matches = _calculate_target_role_score(
         normalized_title, normalized_desc, target_role_entries, reasons
@@ -818,12 +823,14 @@ def score_job(
 
     role_profile_match = evaluate_role_profile(normalized_title, normalized_desc, search_config)
     if role_profile_match:
-        score += int(role_profile_match["score_delta"])
+        score += safe_int(role_profile_match["score_delta"], 0)
         role_profile_reason_parts = []
-        if role_profile_match["title_matches"]:
-            role_profile_reason_parts.append(f"title: {', '.join(role_profile_match['title_matches'])}")
-        if role_profile_match["description_matches"]:
-            role_profile_reason_parts.append(f"description: {', '.join(role_profile_match['description_matches'])}")
+        rp_title_matches = cast(list[str], role_profile_match["title_matches"])
+        rp_desc_matches = cast(list[str], role_profile_match["description_matches"])
+        if rp_title_matches:
+            role_profile_reason_parts.append(f"title: {', '.join(rp_title_matches)}")
+        if rp_desc_matches:
+            role_profile_reason_parts.append(f"description: {', '.join(rp_desc_matches)}")
         append_reason(
             reasons, f"role profile {role_profile_match['display_name']}: {'; '.join(role_profile_reason_parts)}"
         )
@@ -838,9 +845,11 @@ def score_job(
 
     score += _apply_salary_preferences(raw_title, raw_desc, prefs, reasons)
 
-    title_alignment_matches = dedupe_preserving_order(target_title_matches + role_profile_match["title_matches"])
+    rp_title = cast(list[str], role_profile_match["title_matches"])
+    rp_desc = cast(list[str], role_profile_match["description_matches"])
+    title_alignment_matches = dedupe_preserving_order(target_title_matches + rp_title)
     skill_focus_phrases = build_focus_phrases(
-        skill_title_matches, skill_desc_matches, competency_matches, role_profile_match["description_matches"]
+        skill_title_matches, skill_desc_matches, competency_matches, rp_desc
     )
     feedback_keywords = dedupe_preserving_order(build_focus_phrases(title_alignment_matches, skill_focus_phrases))[:8]
     score = apply_feedback_adjustments(score, reasons, source_label, feedback_keywords, feedback_profile)
@@ -883,9 +892,9 @@ def score_job(
 
 
 def queue_pending_alerts(alert_state: dict[str, object], matches: list[dict[str, object]]) -> int:
-    pending_alerts = alert_state["pending_alerts"]
+    pending_alerts = cast(list[dict[str, Any]], alert_state["pending_alerts"])
     pending_links = {str(alert["link"]) for alert in pending_alerts}
-    alerted_links = {str(link) for link in alert_state["alerted_links"]}
+    alerted_links = {str(link) for link in cast(list[object], alert_state["alerted_links"])}
     queued = 0
     for match in matches:
         link = str(match["link"])
@@ -974,7 +983,7 @@ def format_alert_message(alert: dict[str, object]) -> str:
     if alert.get("source"):
         lines.append(f"Source: {alert['source']}")
     if alert.get("reasons"):
-        reasons = "; ".join(str(reason) for reason in alert["reasons"][:2])
+        reasons = "; ".join(str(reason) for reason in cast(list[object], alert["reasons"])[:2])
         lines.append(f"Why: {reasons}")
     lines.append(str(alert["link"]))
     return "\n".join(lines)
@@ -1067,7 +1076,7 @@ def fetch_telegram_updates(
 
 
 def deliver_pending_alerts(alert_state: dict[str, object], current_run_ts: str) -> tuple[int, str]:
-    pending_alerts = list(alert_state["pending_alerts"])
+    pending_alerts = list(cast(list[dict[str, Any]], alert_state["pending_alerts"]))
     if not pending_alerts:
         alert_state["last_delivery_error"] = ""
         return 0, ""
@@ -1076,7 +1085,7 @@ def deliver_pending_alerts(alert_state: dict[str, object], current_run_ts: str) 
         message = "Telegram credentials not configured; alerts left queued in alerts_state.json."
         alert_state["last_delivery_error"] = message
         return 0, message
-    alerted_links = list(alert_state["alerted_links"])
+    alerted_links = list(cast(list[str], alert_state["alerted_links"]))
     alerted_link_set = set(alerted_links)
     sent_count = 0
     for index, alert in enumerate(pending_alerts):
@@ -1100,7 +1109,7 @@ def deliver_pending_alerts(alert_state: dict[str, object], current_run_ts: str) 
 
 
 def sync_application_outcomes(applications_state: dict[str, object], observed_at_utc: str) -> None:
-    for application in applications_state["applications"]:
+    for application in cast(list[dict[str, Any]], applications_state["applications"]):
         status = normalize_application_status(application.get("status", "new"))
         application["status"] = status
         fallback_observed_utc = (
@@ -1126,11 +1135,12 @@ def prune_applications_state(
     current_run_ts: str,
 ) -> dict[str, object]:
     current_dt = parse_iso_utc(current_run_ts) or datetime.now(timezone.utc)
-    feedback_settings = search_config["feedback"]
-    before_count = len(applications_state["applications"])
+    feedback_settings = cast(dict[str, Any], search_config["feedback"])
+    applications = cast(list[dict[str, Any]], applications_state["applications"])
+    before_count = len(applications)
     removed_by_status: dict[str, int] = {}
     retained = []
-    for application in applications_state["applications"]:
+    for application in applications:
         status = normalize_application_status(application.get("status", "new"))
         if status in {"new", "reviewed"}:
             retention_days = int(feedback_settings["new_reviewed_retention_days"])
@@ -1153,10 +1163,11 @@ def prune_applications_state(
         retained.append(application)
     applications_state["applications"] = retained[-MAX_APPLICATION_RECORDS:]
     applications_state["last_cleanup_utc"] = current_run_ts
+    after_count = len(retained[-MAX_APPLICATION_RECORDS:])
     return {
         "before_count": before_count,
-        "after_count": len(applications_state["applications"]),
-        "removed_count": before_count - len(applications_state["applications"]),
+        "after_count": after_count,
+        "removed_count": before_count - after_count,
         "removed_by_status": removed_by_status,
         "retention_days": {
             "new_reviewed": int(feedback_settings["new_reviewed_retention_days"]),
@@ -1195,13 +1206,13 @@ def build_feedback_metrics(
     search_config: dict[str, object],
     cleanup_summary: dict[str, object],
 ) -> dict[str, object]:
-    feedback_settings = search_config["feedback"]
+    feedback_settings = cast(dict[str, Any], search_config["feedback"])
     status_counts = dict.fromkeys(sorted(APPLICATION_STATUSES), 0)
     outcome_sample_count = 0
     source_counters: dict[str, dict[str, int]] = {}
     keyword_counters: dict[str, dict[str, int]] = {}
     source_labels: dict[str, str] = {}
-    for application in applications_state["applications"]:
+    for application in cast(list[dict[str, Any]], applications_state["applications"]):
         status = normalize_application_status(application.get("status", "new"))
         status_counts[status] += 1
         if status not in OUTCOME_RELEVANT_STATUSES:
@@ -1223,7 +1234,7 @@ def build_feedback_metrics(
 
     def build_metric_rows(
         counters: dict[str, dict[str, int]], max_adjustment: int, label_resolver
-    ) -> list[dict[str, object]]:
+    ) -> list[dict[str, Any]]:
         rows = []
         for key, counts in counters.items():
             adjustment = compute_feedback_adjustment(
@@ -1303,8 +1314,8 @@ def save_feedback_metrics_snapshot(feedback_metrics_file: str, snapshot: dict[st
 
 
 def _merge_application_record(
-    existing: dict[str, object],
-    application: dict[str, object],
+    existing: dict[str, Any],
+    application: dict[str, Any],
     seen_at_utc: str,
 ) -> None:
     existing["title"] = application["title"] or existing["title"]
@@ -1370,10 +1381,10 @@ def find_application_record(
 ) -> dict[str, object] | None:
     fingerprint_set = set(fingerprints)
     for application in applications:
-        existing_links = {str(item) for item in application.get("links", [])}
+        existing_links = {str(item) for item in cast(list[object], application.get("links", []))}
         if link and link in existing_links:
             return application
-        existing_fingerprints = {str(item) for item in application.get("fingerprints", [])}
+        existing_fingerprints = {str(item) for item in cast(list[object], application.get("fingerprints", []))}
         if fingerprint_set and existing_fingerprints.intersection(fingerprint_set):
             return application
     return None
@@ -1393,12 +1404,13 @@ def upsert_application_record(
     )
     if application is None:
         return False
+    app_list = cast(list[dict[str, Any]], applications_state["applications"])
     existing = find_application_record(
-        applications_state["applications"], application["fingerprints"], application["link"]
+        app_list, cast(list[str], application["fingerprints"]), str(application["link"])
     )
     if existing is None:
-        applications_state["applications"].append(application)
-        applications_state["applications"] = applications_state["applications"][-MAX_APPLICATION_RECORDS:]
+        app_list.append(application)
+        applications_state["applications"] = app_list[-MAX_APPLICATION_RECORDS:]
         return True
     _merge_application_record(existing, application, seen_at_utc)
     return False
@@ -1417,8 +1429,8 @@ def upsert_application_record_in_storage(payload: dict[str, object], seen_at_utc
 
     existing_link, existing = storage.find_application_by_link_or_fingerprints(
         STATE_DB_FILE,
-        application["link"],
-        application["fingerprints"],
+        str(application["link"]),
+        cast(list[str], application["fingerprints"]),
     )
     if existing is None:
         storage.save_application_record(STATE_DB_FILE, application)
@@ -1490,11 +1502,11 @@ def build_daily_digest_snapshot(
     search_config: dict[str, object],
 ) -> dict[str, object]:
     current_dt = parse_iso_utc(current_run_ts) or datetime.now(timezone.utc)
-    digest_settings = search_config["daily_digest"]
+    digest_settings = cast(dict[str, Any], search_config["daily_digest"])
     items = []
-    for application in applications_state["applications"]:
+    for application in cast(list[dict[str, Any]], applications_state["applications"]):
         status = normalize_application_status(application.get("status", "new"))
-        if status not in digest_settings["include_statuses"]:
+        if status not in cast(list[str], digest_settings["include_statuses"]):
             continue
         rank, age_hours = rank_application_for_digest(application, current_dt)
         items.append(
@@ -1517,10 +1529,10 @@ def build_daily_digest_snapshot(
         )
     items.sort(
         key=lambda item: (
-            int(item["shortlisted"]),
+            bool(item["shortlisted"]),
             COMPANY_CONTROL_ORDER.get(str(item["company_control"]), 0),
-            int(item["rank"]),
-            int(item["score"]),
+            safe_int(item["rank"], 0),
+            safe_int(item["score"], 0),
             clean_text(str(item["last_seen_utc"])),
             clean_text(str(item["title"])),
         ),
@@ -1532,7 +1544,7 @@ def build_daily_digest_snapshot(
         "digest_date_utc": current_dt.date().isoformat(),
         "item_count": len(limited_items),
         "items": limited_items,
-        "include_statuses": list(digest_settings["include_statuses"]),
+        "include_statuses": list(cast(list[str], digest_settings["include_statuses"])),
     }
 
 
@@ -1552,7 +1564,7 @@ def _format_daily_digest_item(item: dict[str, object], index: int) -> str:
         f"{item['title']} at {item['company']}",
     ]
     if item.get("reasons"):
-        lines.append(f"Why: {item['reasons'][0]}")
+        lines.append(f"Why: {cast(list[object], item['reasons'])[0]}")
     lines.append(str(item["link"]))
     return "\n".join(lines)
 
@@ -1562,7 +1574,7 @@ def format_daily_digest_messages(
     page_size: int,
     max_chars: int = 3500,
 ) -> list[str]:
-    items = list(snapshot.get("items", []))
+    items = list(cast(list[Any], snapshot.get("items", [])))
     if not items:
         return [f"Daily Job Digest: {snapshot['digest_date_utc']}\nNo items."]
 
@@ -1604,7 +1616,7 @@ def format_daily_digest_messages(
 
 
 def format_daily_digest_message(snapshot: dict[str, object]) -> str:
-    return format_daily_digest_messages(snapshot, page_size=max(1, len(snapshot.get("items", []))))[0]
+    return format_daily_digest_messages(snapshot, page_size=max(1, len(cast(list[Any], snapshot.get("items", [])))))[0]
 
 
 _DIGEST_CALLBACK_PREFIX = "dg:"
@@ -1695,7 +1707,7 @@ def process_telegram_callback_updates(timeout: int = 0, limit: int = 20) -> tupl
             _ack_callback(callback_query_id, token, "This digest is no longer available.")
             continue
 
-        pages = session["pages"]
+        pages = cast(list[str], session["pages"])
         if not pages:
             _ack_callback(callback_query_id, token, "This digest is empty.")
             continue
@@ -1742,7 +1754,7 @@ def maybe_send_daily_digest(
     current_run_ts: str,
     search_config: dict[str, object],
 ) -> tuple[bool, str]:
-    digest_settings = search_config["daily_digest"]
+    digest_settings = cast(dict[str, Any], search_config["daily_digest"])
     current_dt = parse_iso_utc(current_run_ts) or datetime.now(timezone.utc)
     digest_date = current_dt.date().isoformat()
     if not digest_settings["enabled"]:
@@ -1752,7 +1764,7 @@ def maybe_send_daily_digest(
         return False, ""
     if clean_text(str(applications_state.get("last_digest_date_utc", ""))) == digest_date:
         return False, ""
-    if not snapshot["items"]:
+    if not cast(list[Any], snapshot["items"]):
         applications_state["last_digest_utc"] = current_run_ts
         applications_state["last_digest_date_utc"] = digest_date
         applications_state["last_digest_error"] = ""
@@ -1789,7 +1801,7 @@ def build_application_briefs_snapshot(
 ) -> dict[str, object]:
     current_dt = parse_iso_utc(current_run_ts) or datetime.now(timezone.utc)
     items = []
-    for application in applications_state["applications"]:
+    for application in cast(list[dict[str, Any]], applications_state["applications"]):
         if not parse_bool(application.get("application_ready", False), False):
             continue
         status = normalize_application_status(application.get("status", "new"))
@@ -1807,8 +1819,8 @@ def build_application_briefs_snapshot(
                 "shortlisted": parse_bool(application.get("shortlisted", False), False),
                 "company_control": normalize_company_control(application.get("company_control", "none")),
                 "role_profile": clean_text(str(application.get("role_profile", ""))),
-                "why_this_fits": list(application.get("why_this_fits", []))[:3],
-                "resume_bullet_suggestions": list(application.get("resume_bullet_suggestions", []))[:3],
+                "why_this_fits": list(cast(list[Any], application.get("why_this_fits", [])))[:3],
+                "resume_bullet_suggestions": list(cast(list[Any], application.get("resume_bullet_suggestions", [])))[:3],
                 "intro_message": clean_text(str(application.get("intro_message", ""))),
                 "notes": clean_text(str(application.get("notes", ""))),
                 "last_seen_utc": clean_text(str(application.get("last_seen_utc", ""))),
@@ -1817,10 +1829,10 @@ def build_application_briefs_snapshot(
         )
     items.sort(
         key=lambda item: (
-            int(item["shortlisted"]),
+            bool(item["shortlisted"]),
             COMPANY_CONTROL_ORDER.get(str(item["company_control"]), 0),
-            int(item["rank"]),
-            int(item["score"]),
+            safe_int(item["rank"], 0),
+            safe_int(item["score"], 0),
             clean_text(str(item["last_seen_utc"])),
         ),
         reverse=True,

@@ -48,12 +48,14 @@ class CompileSkillPatternTestCase(unittest.TestCase):
     def test_compiled_pattern_matches_whole_word(self) -> None:
         pattern = compile_skill_pattern("python")
         self.assertIsNotNone(pattern)
+        assert pattern is not None
         self.assertIsNotNone(pattern.search("knows python well"))
         self.assertIsNone(pattern.search("pythonic"))
 
     def test_compiled_pattern_handles_spaces_as_flexible_whitespace(self) -> None:
         pattern = compile_skill_pattern("active directory")
         self.assertIsNotNone(pattern)
+        assert pattern is not None
         self.assertIsNotNone(pattern.search("uses Active  Directory"))
 
 
@@ -223,6 +225,7 @@ class ParseIsoUtcTestCase(unittest.TestCase):
     def test_parses_z_suffix(self) -> None:
         result = parse_iso_utc("2026-04-04T10:00:00Z")
         self.assertIsNotNone(result)
+        assert result is not None
         self.assertEqual(result.tzinfo, timezone.utc)
         self.assertEqual(result.year, 2026)
 
@@ -246,6 +249,7 @@ class LatestApplicationTimestampTestCase(unittest.TestCase):
         }
         result = latest_application_timestamp(application)
         self.assertIsNotNone(result)
+        assert result is not None
         self.assertEqual(result.month, 4)
 
     def test_returns_none_for_empty(self) -> None:

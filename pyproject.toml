@@ -29,21 +29,6 @@ python_version = "3.10"
 ignore_missing_imports = true
 check_untyped_defs = true
 
-# Pre-existing type errors in these modules are suppressed until addressed incrementally.
-[[tool.mypy.overrides]]
-module = [
-    "jobbot.matching",
-    "jobbot.common",
-    "jobbot.sources",
-    "jobbot.storage",
-    "pull_jobs",
-    "pull_desc",
-    "telegram_callback_worker",
-    "test_pull_jobs",
-    "test_pull_desc",
-    "test_telegram_callback_worker",
-]
-ignore_errors = true
 
 [tool.pylint.messages_control]
 disable = [

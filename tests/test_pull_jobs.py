@@ -5,6 +5,7 @@ import sqlite3
 import tempfile
 import unittest
 from pathlib import Path
+from typing import Any, cast
 from unittest import mock
 
 import pull_jobs
@@ -59,7 +60,7 @@ class PullJobsTestCase(unittest.TestCase):
             link="https://example.com/jobs/monzo-it-support",
         )
 
-        evaluation = pull_jobs.score_job(
+        evaluation = cast(dict[str, Any], pull_jobs.score_job(
             item,
             "example_board",
             self.profile,
@@ -73,10 +74,10 @@ class PullJobsTestCase(unittest.TestCase):
             },
             "2026-04-04T10:00:00Z",
             lockouts,
-        )
+        ))
 
         self.assertTrue(evaluation["qualified"], evaluation)
-        match = evaluation["match"]
+        match = cast(dict[str, Any], evaluation["match"])
         self.assertTrue(match["shortlisted"])
         self.assertEqual(match["company_control"], "priority")
         self.assertTrue(match["why_this_fits"])
@@ -98,7 +99,7 @@ class PullJobsTestCase(unittest.TestCase):
             link="https://example.com/jobs/recruiter-it-support",
         )
 
-        evaluation = pull_jobs.score_job(
+        evaluation = cast(dict[str, Any], pull_jobs.score_job(
             item,
             "example_board",
             self.profile,
@@ -112,13 +113,13 @@ class PullJobsTestCase(unittest.TestCase):
             },
             "2026-04-04T10:00:00Z",
             ["remote us", "us only"],
-        )
+        ))
 
         self.assertFalse(evaluation["qualified"], evaluation)
-        self.assertIn("blacklisted employer", " ".join(evaluation["reasons"]))
+        self.assertIn("blacklisted employer", " ".join(cast(list[str], evaluation["reasons"])))
 
     def test_upsert_application_record_merges_duplicate_matches(self) -> None:
-        state = fresh_applications_state()
+        state = cast(dict[str, Any], fresh_applications_state())
         first_payload = {
             "title": "IT Support Engineer at Monzo",
             "description": "London hybrid Active Directory and Microsoft 365 support role.",
@@ -203,7 +204,7 @@ class PullJobsTestCase(unittest.TestCase):
         }
         self.assertFalse(pull_jobs.upsert_application_record_in_storage(second_payload, "2026-04-04T11:00:00Z"))
 
-        applications_state = pull_jobs.load_applications_state()
+        applications_state = cast(dict[str, Any], pull_jobs.load_applications_state())
         self.assertEqual(len(applications_state["applications"]), 1)
         application = applications_state["applications"][0]
         self.assertEqual(application["best_score"], 64)
@@ -227,7 +228,7 @@ class PullJobsTestCase(unittest.TestCase):
                 }
             }
         )
-        applications_state = fresh_applications_state()
+        applications_state = cast(dict[str, Any], fresh_applications_state())
         applications_state["applications"] = [
             normalize_application_record(
                 {
@@ -282,12 +283,12 @@ class PullJobsTestCase(unittest.TestCase):
         cleanup = pull_jobs.prune_applications_state(applications_state, search_config, "2026-04-04T10:00:00Z")
         self.assertEqual(cleanup["removed_count"], 1, cleanup)
 
-        feedback = pull_jobs.build_feedback_metrics(
+        feedback = cast(dict[str, Any], pull_jobs.build_feedback_metrics(
             "2026-04-04T10:00:00Z",
             applications_state,
             search_config,
             cleanup,
-        )
+        ))
         self.assertGreater(feedback["source_adjustments"].get("good_board", 0), 0)
         self.assertLess(feedback["source_adjustments"].get("bad_board", 0), 0)
         self.assertGreater(feedback["keyword_adjustments"].get("active directory", 0), 0)
@@ -298,7 +299,7 @@ class PullJobsTestCase(unittest.TestCase):
             description="London hybrid role with Active Directory, Microsoft 365, troubleshooting and onboarding.",
             link="https://example.com/future-good",
         )
-        good_eval = pull_jobs.score_job(
+        good_eval = cast(dict[str, Any], pull_jobs.score_job(
             item,
             "good_board",
             self.profile,
@@ -306,8 +307,8 @@ class PullJobsTestCase(unittest.TestCase):
             feedback,
             "2026-04-04T10:05:00Z",
             ["remote us", "us only"],
-        )
-        bad_eval = pull_jobs.score_job(
+        ))
+        bad_eval = cast(dict[str, Any], pull_jobs.score_job(
             item,
             "bad_board",
             self.profile,
@@ -315,9 +316,9 @@ class PullJobsTestCase(unittest.TestCase):
             feedback,
             "2026-04-04T10:05:00Z",
             ["remote us", "us only"],
-        )
-        self.assertGreater(good_eval["score"], bad_eval["score"])
-        self.assertIn("feedback", " ".join(good_eval["reasons"]).lower())
+        ))
+        self.assertGreater(cast(int, good_eval["score"]), cast(int, bad_eval["score"]))
+        self.assertIn("feedback", " ".join(cast(list[str], good_eval["reasons"])).lower())
 
     def test_format_daily_digest_messages_splits_pages(self) -> None:
         snapshot = {
@@ -363,7 +364,7 @@ class PullJobsTestCase(unittest.TestCase):
                 "feedback": {"enabled": False},
             }
         )
-        applications_state = fresh_applications_state()
+        applications_state = cast(dict[str, Any], fresh_applications_state())
         applications_state["applications"] = [
             normalize_application_record(
                 {
@@ -418,12 +419,15 @@ class PullJobsTestCase(unittest.TestCase):
         first_message, keyboard = sent_messages[0]
         self.assertIn("Page 1/3 | Jobs 1-2 of 5", first_message)
         self.assertIsNotNone(keyboard)
-        self.assertEqual(len(keyboard["inline_keyboard"][0]), 3)
-        session_callback = keyboard["inline_keyboard"][0][2]["callback_data"]
+        assert keyboard is not None
+        kb = cast(dict[str, Any], keyboard)
+        self.assertEqual(len(kb["inline_keyboard"][0]), 3)
+        session_callback = kb["inline_keyboard"][0][2]["callback_data"]
         session_id = session_callback.split(":")[1]
         session = jobbot_storage.load_telegram_digest_session(pull_jobs.STATE_DB_FILE, session_id)
         self.assertIsNotNone(session)
-        self.assertEqual(len(session["pages"]), 3)
+        assert session is not None
+        self.assertEqual(len(cast(dict[str, Any], session)["pages"]), 3)
         self.assertEqual(applications_state["last_digest_date_utc"], "2026-04-04")
 
     def test_process_telegram_callback_updates_edits_digest_message(self) -> None:
@@ -490,7 +494,8 @@ class PullJobsTestCase(unittest.TestCase):
         self.assertEqual(edit_calls[0][2], "chat-123")
         self.assertEqual(edit_calls[0][3], 77)
         self.assertIsNotNone(edit_calls[0][4])
-        self.assertEqual(edit_calls[0][4]["inline_keyboard"][0][1]["text"], "2/3")
+        assert edit_calls[0][4] is not None
+        self.assertEqual(cast(dict[str, Any], edit_calls[0][4])["inline_keyboard"][0][1]["text"], "2/3")
         self.assertEqual(len(answer_calls), 1)
         self.assertEqual(answer_calls[0][0], "cb-1")
 
@@ -523,10 +528,12 @@ class PullJobsTestCase(unittest.TestCase):
         self.assertEqual(method, "getUpdates")
         self.assertEqual(token, "token")
         self.assertIsNotNone(payload)
-        self.assertEqual(payload["offset"], 12)
-        self.assertEqual(payload["limit"], 5)
-        self.assertEqual(payload["timeout"], 25)
-        self.assertEqual(payload["allowed_updates"], ["callback_query"])
+        assert payload is not None
+        pl = cast(dict[str, Any], payload)
+        self.assertEqual(pl["offset"], 12)
+        self.assertEqual(pl["limit"], 5)
+        self.assertEqual(pl["timeout"], 25)
+        self.assertEqual(pl["allowed_updates"], ["callback_query"])
         self.assertEqual(request_timeout_seconds, 30.0)
 
     def test_fetch_generic_html_board_jobs_parses_jsonld_job(self) -> None:

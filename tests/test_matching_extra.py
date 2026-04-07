@@ -1,4 +1,5 @@
 import unittest
+from typing import Any, cast
 from unittest import mock
 
 from jobbot import matching
@@ -77,23 +78,28 @@ class ExtractSalaryRangeGbpTestCase(unittest.TestCase):
     def test_gbp_range(self) -> None:
         result = matching.extract_salary_range_gbp("£40,000 - £60,000 per year")
         self.assertIsNotNone(result)
-        self.assertEqual(result["currency"], "gbp")
-        self.assertGreaterEqual(result["min_gbp"], 40000)
-        self.assertLessEqual(result["max_gbp"], 60000)
+        assert result is not None
+        r = cast(dict[str, Any], result)
+        self.assertEqual(r["currency"], "gbp")
+        self.assertGreaterEqual(cast(float, r["min_gbp"]), 40000)
+        self.assertLessEqual(cast(float, r["max_gbp"]), 60000)
 
     def test_gbp_with_k_suffix(self) -> None:
         result = matching.extract_salary_range_gbp("£40k - £60k")
         self.assertIsNotNone(result)
-        self.assertGreaterEqual(result["min_gbp"], 40000)
+        assert result is not None
+        self.assertGreaterEqual(cast(float, result["min_gbp"]), 40000)
 
     def test_usd_range(self) -> None:
         result = matching.extract_salary_range_gbp("$80,000 - $100,000")
         self.assertIsNotNone(result)
+        assert result is not None
         self.assertEqual(result["currency"], "usd")
 
     def test_single_salary(self) -> None:
         result = matching.extract_salary_range_gbp("Salary: £55,000")
         self.assertIsNotNone(result)
+        assert result is not None
         self.assertEqual(result["min_gbp"], result["max_gbp"])
 
     def test_no_salary_returns_none(self) -> None:
@@ -110,6 +116,7 @@ class ExtractSalaryRangeGbpTestCase(unittest.TestCase):
     def test_hourly_rate(self) -> None:
         result = matching.extract_salary_range_gbp("£25 per hour")
         self.assertIsNotNone(result)
+        assert result is not None
         self.assertEqual(result["cadence"], "hour")
 
 
@@ -166,7 +173,7 @@ class EvaluateCompanyPreferencesTestCase(unittest.TestCase):
         self.assertTrue(result["qualified"])
         self.assertFalse(result["shortlisted"])
         self.assertEqual(result["control"], "whitelist")
-        self.assertGreater(result["score_delta"], 0)
+        self.assertGreater(cast(int, result["score_delta"]), 0)
 
     def test_unknown_company_qualifies_with_no_boost(self) -> None:
         result = matching.evaluate_company_preferences("Unknown Co", self._config())
@@ -261,7 +268,7 @@ class FormatAlertMessageTestCase(unittest.TestCase):
 
 class QueuePendingAlertsTestCase(unittest.TestCase):
     def test_queues_new_alerts(self) -> None:
-        alert_state = {
+        alert_state: dict[str, object] = {
             "pending_alerts": [],
             "alerted_links": [],
         }
@@ -281,10 +288,10 @@ class QueuePendingAlertsTestCase(unittest.TestCase):
         ]
         queued = matching.queue_pending_alerts(alert_state, matches)
         self.assertEqual(queued, 1)
-        self.assertEqual(len(alert_state["pending_alerts"]), 1)
+        self.assertEqual(len(cast(list[object], alert_state["pending_alerts"])), 1)
 
     def test_does_not_queue_already_alerted(self) -> None:
-        alert_state = {
+        alert_state: dict[str, object] = {
             "pending_alerts": [],
             "alerted_links": ["https://example.com/job/1"],
         }
@@ -318,7 +325,7 @@ class QueuePendingAlertsTestCase(unittest.TestCase):
             "company_control": "none",
             "role_profile": "",
         }
-        alert_state = {
+        alert_state: dict[str, object] = {
             "pending_alerts": [existing],
             "alerted_links": [],
         }
@@ -328,7 +335,7 @@ class QueuePendingAlertsTestCase(unittest.TestCase):
 
 class DeliverPendingAlertsTestCase(unittest.TestCase):
     def test_returns_zero_when_no_pending(self) -> None:
-        alert_state = {
+        alert_state: dict[str, object] = {
             "pending_alerts": [],
             "alerted_links": [],
             "last_delivery_error": "old error",
@@ -339,7 +346,7 @@ class DeliverPendingAlertsTestCase(unittest.TestCase):
         self.assertEqual(alert_state["last_delivery_error"], "")
 
     def test_returns_error_when_credentials_missing(self) -> None:
-        alert_state = {
+        alert_state: dict[str, object] = {
             "pending_alerts": [{"link": "https://example.com/job/1", "title": "X", "score": 50, "reasons": []}],
             "alerted_links": [],
         }
@@ -349,7 +356,7 @@ class DeliverPendingAlertsTestCase(unittest.TestCase):
         self.assertIn("Telegram credentials not configured", error)
 
     def test_sends_alerts_and_clears_pending(self) -> None:
-        alert_state = {
+        alert_state: dict[str, object] = {
             "pending_alerts": [
                 {
                     "link": "https://example.com/job/1",
@@ -374,10 +381,10 @@ class DeliverPendingAlertsTestCase(unittest.TestCase):
         self.assertEqual(count, 1)
         self.assertEqual(error, "")
         self.assertEqual(alert_state["pending_alerts"], [])
-        self.assertIn("https://example.com/job/1", alert_state["alerted_links"])
+        self.assertIn("https://example.com/job/1", cast(list[str], alert_state["alerted_links"]))
 
     def test_stops_on_send_failure(self) -> None:
-        alert_state = {
+        alert_state: dict[str, object] = {
             "pending_alerts": [
                 {
                     "link": "https://example.com/job/1", "title": "A", "score": 50, "reasons": [],
@@ -398,7 +405,7 @@ class DeliverPendingAlertsTestCase(unittest.TestCase):
 
         self.assertEqual(count, 0)
         self.assertIn("network error", error)
-        self.assertEqual(len(alert_state["pending_alerts"]), 2)
+        self.assertEqual(len(cast(list[object], alert_state["pending_alerts"])), 2)
 
 
 class ParseDigestCallbackDataTestCase(unittest.TestCase):
@@ -429,20 +436,24 @@ class BuildDailyDigestKeyboardTestCase(unittest.TestCase):
     def test_multi_page_returns_keyboard(self) -> None:
         keyboard = matching.build_daily_digest_keyboard("session1", 1, 3)
         self.assertIsNotNone(keyboard)
-        buttons = keyboard["inline_keyboard"][0]
+        assert keyboard is not None
+        kb = cast(dict[str, Any], keyboard)
+        buttons = kb["inline_keyboard"][0]
         self.assertEqual(len(buttons), 3)
         self.assertIn("2/3", buttons[1]["text"])
 
     def test_first_page_prev_is_noop(self) -> None:
         keyboard = matching.build_daily_digest_keyboard("session1", 0, 3)
         self.assertIsNotNone(keyboard)
-        prev_data = keyboard["inline_keyboard"][0][0]["callback_data"]
+        assert keyboard is not None
+        prev_data = cast(dict[str, Any], keyboard)["inline_keyboard"][0][0]["callback_data"]
         self.assertIn("noop", prev_data)
 
     def test_last_page_next_is_noop(self) -> None:
         keyboard = matching.build_daily_digest_keyboard("session1", 2, 3)
         self.assertIsNotNone(keyboard)
-        next_data = keyboard["inline_keyboard"][0][2]["callback_data"]
+        assert keyboard is not None
+        next_data = cast(dict[str, Any], keyboard)["inline_keyboard"][0][2]["callback_data"]
         self.assertIn("noop", next_data)
 
 
@@ -482,7 +493,7 @@ class FormatDailyDigestMessagesTestCase(unittest.TestCase):
 
 class SeedApplicationsFromExistingJobsTestCase(unittest.TestCase):
     def test_seeds_when_state_empty(self) -> None:
-        state = fresh_applications_state()
+        state = cast(dict[str, Any], fresh_applications_state())
         jobs = [
             {
                 "time": "2026-04-04T10:00:00Z",
@@ -496,7 +507,7 @@ class SeedApplicationsFromExistingJobsTestCase(unittest.TestCase):
         self.assertEqual(len(state["applications"]), 1)
 
     def test_does_not_seed_when_applications_exist(self) -> None:
-        state = fresh_applications_state()
+        state = cast(dict[str, Any], fresh_applications_state())
         state["applications"] = [{"title": "Existing", "link": "https://example.com/old"}]
         jobs = [{"time": "", "title": "New", "description": "", "link": "https://example.com/new"}]
         created = matching.seed_applications_from_existing_jobs(state, jobs)
@@ -504,7 +515,7 @@ class SeedApplicationsFromExistingJobsTestCase(unittest.TestCase):
         self.assertEqual(len(state["applications"]), 1)
 
     def test_does_not_seed_when_no_jobs(self) -> None:
-        state = fresh_applications_state()
+        state = cast(dict[str, Any], fresh_applications_state())
         created = matching.seed_applications_from_existing_jobs(state, [])
         self.assertEqual(created, 0)
 
@@ -521,7 +532,8 @@ class NormalizeApplicationRecordTestCase(unittest.TestCase):
         }
         result = matching.normalize_application_record(payload)
         self.assertIsNotNone(result)
-        self.assertIn("single-fingerprint", result["fingerprints"])
+        assert result is not None
+        self.assertIn("single-fingerprint", cast(list[str], result["fingerprints"]))
 
     def test_handles_non_list_links(self) -> None:
         payload = {
@@ -548,6 +560,7 @@ class NormalizeApplicationRecordTestCase(unittest.TestCase):
         }
         result = matching.normalize_application_record(payload)
         self.assertIsNotNone(result)
+        assert result is not None
         self.assertEqual(result["company"], "Monzo")
 
     def test_application_ready_when_score_high(self) -> None:
@@ -560,6 +573,7 @@ class NormalizeApplicationRecordTestCase(unittest.TestCase):
         }
         result = matching.normalize_application_record(payload)
         self.assertIsNotNone(result)
+        assert result is not None
         self.assertTrue(result["application_ready"])
 
     def test_handles_non_list_reasons(self) -> None:
@@ -592,7 +606,7 @@ class NormalizeApplicationRecordTestCase(unittest.TestCase):
 
 class SyncApplicationOutcomesTestCase(unittest.TestCase):
     def test_sets_applied_at_utc_for_applied_status(self) -> None:
-        state = fresh_applications_state()
+        state = cast(dict[str, Any], fresh_applications_state())
         state["applications"] = [
             {
                 "title": "Role",
@@ -606,7 +620,7 @@ class SyncApplicationOutcomesTestCase(unittest.TestCase):
         self.assertTrue(app.get("applied_at_utc"))
 
     def test_sets_interviewed_at_utc_for_interview_status(self) -> None:
-        state = fresh_applications_state()
+        state = cast(dict[str, Any], fresh_applications_state())
         state["applications"] = [
             {
                 "title": "Role",
@@ -620,7 +634,7 @@ class SyncApplicationOutcomesTestCase(unittest.TestCase):
         self.assertTrue(app.get("interviewed_at_utc"))
 
     def test_sets_rejected_at_utc_for_rejected_status(self) -> None:
-        state = fresh_applications_state()
+        state = cast(dict[str, Any], fresh_applications_state())
         state["applications"] = [
             {
                 "title": "Role",

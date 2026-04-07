@@ -1,11 +1,14 @@
 import base64
 import html
+import http.client
 import json
 import logging
 import os
 import re
 import time
+from collections.abc import Mapping
 from pathlib import Path
+from typing import cast
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode, urljoin, urlsplit
 from urllib.request import Request, urlopen
@@ -39,7 +42,7 @@ _MAX_RETRIES = 3
 _RETRY_BACKOFF_BASE = 1.0  # seconds; doubles each attempt
 
 
-def _urlopen_with_retry(request: Request, timeout: int) -> object:
+def _urlopen_with_retry(request: Request, timeout: int) -> http.client.HTTPResponse:
     """Wrap urlopen with exponential-backoff retries for transient failures."""
     last_exc: Exception | None = None
     for attempt in range(_MAX_RETRIES):
@@ -224,7 +227,7 @@ def iter_json_nodes(payload: object):
             yield from iter_json_nodes(item)
 
 
-def node_has_type(node: dict[str, object], target_type: str) -> bool:
+def node_has_type(node: Mapping[str, object], target_type: str) -> bool:
     raw_type = node.get("@type")
     if isinstance(raw_type, list):
         return any(clean_text(str(item)).lower() == target_type.lower() for item in raw_type)
@@ -252,7 +255,7 @@ def format_jsonld_address(address: object) -> str:
     )
 
 
-def extract_jsonld_location_text(node: dict[str, object]) -> str:
+def extract_jsonld_location_text(node: Mapping[str, object]) -> str:
     locations = []
     if clean_text(str(node.get("jobLocationType", ""))).lower() == "telecommute":
         locations.append("remote")
@@ -308,7 +311,7 @@ def format_provider_salary_text(
     return ""
 
 
-def extract_jsonld_salary_text(node: dict[str, object]) -> str:
+def extract_jsonld_salary_text(node: Mapping[str, object]) -> str:
     base_salary = node.get("baseSalary")
     candidates = base_salary if isinstance(base_salary, list) else [base_salary]
     for candidate in candidates:
@@ -335,7 +338,7 @@ def extract_jsonld_salary_text(node: dict[str, object]) -> str:
 
 
 def jobposting_node_to_item(
-    node: dict[str, object],
+    node: Mapping[str, object],
     display_name: str,
     fallback_url: str = "",
 ) -> JobLead | None:
@@ -421,18 +424,20 @@ def url_matches_allowed_domains(url: str, allowed_domains: list[str]) -> bool:
 def looks_like_generic_job_link(
     url: str,
     anchor_text: str,
-    board: dict[str, object],
+    board: Mapping[str, object],
 ) -> bool:
-    if not url_matches_allowed_domains(url, board["allowed_domains"]):
+    if not url_matches_allowed_domains(url, cast(list[str], board["allowed_domains"])):
         return False
 
     normalized_url = normalize_text(url)
     normalized_anchor = normalize_text(anchor_text)
-    patterns = board.get("_job_link_patterns") or [re.compile(p, re.IGNORECASE) for p in board["job_link_regexes"]]
+    patterns = cast(list[re.Pattern[str]], board.get("_job_link_patterns")) or [
+        re.compile(p, re.IGNORECASE) for p in cast(list[str], board["job_link_regexes"])
+    ]
     if any(pattern.search(url) for pattern in patterns):
         return True
 
-    keywords = list(board["job_link_keywords"]) or list(DEFAULT_GENERIC_JOB_LINK_KEYWORDS)
+    keywords = list(cast(list[str], board["job_link_keywords"])) or list(DEFAULT_GENERIC_JOB_LINK_KEYWORDS)
     return bool(any(keyword in normalized_url or keyword in normalized_anchor for keyword in keywords))
 
 
@@ -461,7 +466,7 @@ class GenericHtmlSource(Source):
     def fetch(self) -> list[JobLead]:
         board = self.config
         candidate_links = []
-        for start_url in board["start_urls"][:GENERIC_HTML_MAX_START_URLS]:
+        for start_url in cast(list[str], board["start_urls"])[:GENERIC_HTML_MAX_START_URLS]:
             html_text = fetch_feed(start_url)
             for absolute_url, anchor_text in extract_anchor_links(html_text, start_url):
                 if looks_like_generic_job_link(absolute_url, anchor_text, board):
@@ -686,20 +691,20 @@ class EfcHtmlSource(Source):
         return items
 
 
-def _normalize_greenhouse(raw_board: dict[str, object], normalized: dict[str, object]) -> None:
+def _normalize_greenhouse(raw_board: Mapping[str, object], normalized: dict[str, object]) -> None:
     normalized["board_token"] = clean_text(str(raw_board.get("board_token", ""))).strip("/")
 
 
-def _normalize_lever(raw_board: dict[str, object], normalized: dict[str, object]) -> None:
+def _normalize_lever(raw_board: Mapping[str, object], normalized: dict[str, object]) -> None:
     normalized["site"] = clean_text(str(raw_board.get("site", ""))).strip("/")
     normalized["instance"] = normalize_text(str(raw_board.get("instance", "global"))) or "global"
 
 
-def _normalize_ashby(raw_board: dict[str, object], normalized: dict[str, object]) -> None:
+def _normalize_ashby(raw_board: Mapping[str, object], normalized: dict[str, object]) -> None:
     normalized["job_board_name"] = clean_text(str(raw_board.get("job_board_name", ""))).strip("/")
 
 
-def _normalize_workable(raw_board: dict[str, object], normalized: dict[str, object]) -> None:
+def _normalize_workable(raw_board: Mapping[str, object], normalized: dict[str, object]) -> None:
     normalized["account_subdomain"] = clean_text(
         str(raw_board.get("account_subdomain", "") or raw_board.get("subdomain", ""))
     ).strip("/")
@@ -707,13 +712,13 @@ def _normalize_workable(raw_board: dict[str, object], normalized: dict[str, obje
     normalized["api_token_env"] = clean_text(str(raw_board.get("api_token_env", "")))
 
 
-def _normalize_generic_html(raw_board: dict[str, object], normalized: dict[str, object]) -> None:
+def _normalize_generic_html(raw_board: Mapping[str, object], normalized: dict[str, object]) -> None:
     normalized["start_urls"] = normalize_url_list(raw_board.get("start_urls", []))
     raw_allowed_domains = raw_board.get("allowed_domains", [])
     normalized["allowed_domains"] = normalize_string_list(raw_allowed_domains, lower=True)
     if not normalized["allowed_domains"]:
         normalized["allowed_domains"] = dedupe_preserving_order(
-            [urlsplit(url).netloc.lower() for url in normalized["start_urls"] if urlsplit(url).netloc]
+            [urlsplit(url).netloc.lower() for url in cast(list[str], normalized["start_urls"]) if urlsplit(url).netloc]
         )
     normalized["job_link_keywords"] = normalize_string_list(
         raw_board.get("job_link_keywords", []),
@@ -721,7 +726,7 @@ def _normalize_generic_html(raw_board: dict[str, object], normalized: dict[str, 
     )
     normalized["job_link_regexes"] = normalize_string_list(raw_board.get("job_link_regexes", []))
     normalized["_job_link_patterns"] = [
-        re.compile(pattern, re.IGNORECASE) for pattern in normalized["job_link_regexes"]
+        re.compile(pattern, re.IGNORECASE) for pattern in cast(list[str], normalized["job_link_regexes"])
     ]
     normalized["max_job_pages"] = max(
         1,
@@ -738,7 +743,7 @@ BOARD_NORMALIZERS = {
 }
 
 
-def normalize_company_board(raw_board: dict[str, object]) -> dict[str, object] | None:
+def normalize_company_board(raw_board: Mapping[str, object]) -> dict[str, object] | None:
     """
     Normalize a raw company board dictionary into a standardized format.
 
@@ -838,7 +843,7 @@ class GreenhouseSource(Source):
                     title=clean_text(str(job.get("title", ""))),
                     description=join_text_parts(job.get("content", ""), departments, offices),
                     location=location,
-                    company=board.get("display_name", ""),
+                    company=str(board.get("display_name", "")),
                     source="Greenhouse",
                     salary="",
                     employment_type="",
@@ -889,7 +894,7 @@ class LeverSource(Source):
                             job.get("salaryDescriptionPlain", ""),
                         ),
                         location=categories.get("location", ""),
-                        company=board.get("display_name", ""),
+                        company=str(board.get("display_name", "")),
                         source="Lever",
                         salary=salary,
                         employment_type=categories.get("commitment", ""),
@@ -931,7 +936,7 @@ class AshbySource(Source):
                         compensation.get("compensationTierSummary", ""),
                     ),
                     location=job.get("location", ""),
-                    company=board.get("display_name", ""),
+                    company=str(board.get("display_name", "")),
                     source="Ashby",
                     salary="",
                     employment_type=job.get("employmentType", ""),
@@ -978,7 +983,7 @@ class WorkableSource(Source):
                         job.get("department", ""),
                     ),
                     location=join_text_parts(loc.get("location_str", ""), loc.get("city", ""), loc.get("country", "")),
-                    company=board.get("display_name", ""),
+                    company=str(board.get("display_name", "")),
                     source="Workable",
                     salary=format_provider_salary_text(
                         salary.get("salary_from"),
@@ -1406,7 +1411,7 @@ def parse_feed_items(xml_text: str, display_name: str = "") -> list[JobLead]:
             raise
 
 
-def parse_efinancialcareers_html(html_text: str, source: dict[str, object]) -> list[JobLead]:
+def parse_efinancialcareers_html(html_text: str, source: Mapping[str, object]) -> list[JobLead]:
     """Parse eFinancialCareers HTML page and return JobLead items."""
     cfg = {"url": "", "display_name": "", "name": "", **source}
     src = EfcHtmlSource(cfg)
@@ -1417,19 +1422,19 @@ def parse_efinancialcareers_html(html_text: str, source: dict[str, object]) -> l
         return src.fetch()
 
 
-def fetch_greenhouse_board_jobs(board: dict[str, object]) -> list[JobLead]:
+def fetch_greenhouse_board_jobs(board: Mapping[str, object]) -> list[JobLead]:
     return GreenhouseSource(board).fetch()
 
 
-def fetch_lever_board_jobs(board: dict[str, object]) -> list[JobLead]:
+def fetch_lever_board_jobs(board: Mapping[str, object]) -> list[JobLead]:
     return LeverSource(board).fetch()
 
 
-def fetch_ashby_board_jobs(board: dict[str, object]) -> list[JobLead]:
+def fetch_ashby_board_jobs(board: Mapping[str, object]) -> list[JobLead]:
     return AshbySource(board).fetch()
 
 
-def fetch_workable_board_jobs(board: dict[str, object]) -> list[JobLead]:
+def fetch_workable_board_jobs(board: Mapping[str, object]) -> list[JobLead]:
     return WorkableSource(board).fetch()
 
 
@@ -1442,7 +1447,7 @@ _PLATFORM_HANDLERS: dict[str, type] = {
 }
 
 
-def fetch_company_board_items(board: dict[str, object]) -> list[JobLead]:
+def fetch_company_board_items(board: Mapping[str, object]) -> list[JobLead]:
     """Dispatch to the correct handler based on the board platform."""
     platform = str(board.get("platform", ""))
     if platform == "greenhouse":
@@ -1458,7 +1463,7 @@ def fetch_company_board_items(board: dict[str, object]) -> list[JobLead]:
     return []
 
 
-def parse_source_items(source: dict[str, object], xml_raw: str) -> list[JobLead]:
+def parse_source_items(source: Mapping[str, object], xml_raw: str) -> list[JobLead]:
     """Parse raw XML/HTML for a non-board (RSS/EFC) source."""
     source_type = str(source.get("type", ""))
     display_name = str(source.get("display_name", "") or source.get("name", ""))

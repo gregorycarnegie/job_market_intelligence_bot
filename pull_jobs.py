@@ -3,6 +3,7 @@ import os
 from datetime import datetime, timezone
 from pathlib import Path
 from time import time
+from typing import Any, cast
 from urllib.error import HTTPError, URLError
 from xml.etree import ElementTree
 
@@ -189,7 +190,7 @@ def main() -> int:
             MAX_REVIEWED_FINGERPRINTS,
         )
 
-    preferred_locations = profile["preferred_locations"]
+    preferred_locations = cast(list[str], profile["preferred_locations"])
     regions = ["us", "usa", "united states", "uk", "united kingdom", "canada", "europe", "americas"]
     lockouts = [f"{region} only" for region in regions if region not in preferred_locations]
     lockouts += [f"remote {region}" for region in regions if region not in preferred_locations]
@@ -217,18 +218,18 @@ def main() -> int:
                 ):
                     continue
 
-                evaluation = score_job(
+                evaluation = cast(dict[str, Any], score_job(
                     item, source_label, profile, search_config, feedback_profile, current_run_ts, lockouts
-                )
+                ))
                 storage.append_reviewed_fingerprints(STATE_DB_FILE, fingerprints, MAX_REVIEWED_FINGERPRINTS)
                 reviewed_count += 1
                 if not evaluation["qualified"]:
-                    candidate = evaluation.get("candidate")
-                    if candidate and evaluation["score"] >= max(0, MIN_MATCH_SCORE - BORDERLINE_MATCH_MARGIN):
+                    candidate = cast(dict[str, object] | None, evaluation.get("candidate"))
+                    if candidate and cast(int, evaluation["score"]) >= max(0, MIN_MATCH_SCORE - BORDERLINE_MATCH_MARGIN):
                         borderline_details.append(candidate)
                     continue
 
-                match = evaluation["match"]
+                match = cast(dict[str, Any], evaluation["match"])
                 new_rows.append(
                     {
                         "time": match["time"],
@@ -243,14 +244,14 @@ def main() -> int:
                         "link": match["link"],
                     }
                 )
-                match_details.append(match)
-                if upsert_application_record_in_storage(match, current_run_ts):
+                match_details.append(cast(dict[str, object], match))
+                if upsert_application_record_in_storage(cast(dict[str, object], match), current_run_ts):
                     applications_created += 1
                 existing_links.add(link)
                 new_hits += 1
 
             append_rows(new_rows)
-            feed_state[source["name"]] = {"last_checked_at": checked_at}
+            feed_state[cast(str, source["name"])] = {"last_checked_at": checked_at}
 
         except (ElementTree.ParseError, HTTPError, URLError, OSError, ValueError) as exc:
             source_ref = source.get("url") or source.get("platform") or source.get("name")
@@ -283,7 +284,7 @@ def main() -> int:
         current_run_ts,
         search_config,
     )
-    save_feedback_metrics_snapshot(feedback_profile["snapshot"])
+    save_feedback_metrics_snapshot(cast(dict[str, object], feedback_profile["snapshot"]))
     save_applications_state(applications_state)
 
     if (
@@ -293,7 +294,7 @@ def main() -> int:
         or applications_created > 0
         or seeded_applications > 0
         or digest_sent
-        or cleanup_summary["removed_count"] > 0
+        or cast(int, cleanup_summary["removed_count"]) > 0
     ):
         logger.info(
             "Jobs: found %d new matches, reviewed %d new items, tracked %d applications, "
@@ -303,10 +304,10 @@ def main() -> int:
             reviewed_count,
             applications_created,
             seeded_applications,
-            cleanup_summary["removed_count"],
+            cast(int, cleanup_summary["removed_count"]),
             queued_count,
             sent_count,
-            len(alert_state["pending_alerts"]),
+            len(cast(list[object], alert_state["pending_alerts"])),
             "sent" if digest_sent else "not sent",
         )
     else:

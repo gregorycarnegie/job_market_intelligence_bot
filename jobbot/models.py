@@ -1,4 +1,5 @@
 import abc
+from collections.abc import Mapping
 from dataclasses import dataclass
 
 
@@ -29,7 +30,7 @@ class JobLead:
 
 
 class Source(abc.ABC):
-    def __init__(self, config: dict[str, object]):
+    def __init__(self, config: Mapping[str, object]):
         self.config = config
 
     @abc.abstractmethod

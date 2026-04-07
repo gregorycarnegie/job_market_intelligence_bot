@@ -2,6 +2,7 @@ import os
 import tempfile
 import unittest
 from pathlib import Path
+from typing import Any, cast
 
 from jobbot import storage as jobbot_storage
 
@@ -89,7 +90,7 @@ class AlertStateTestCase(StorageTestBase):
             "last_delivery_error": "",
         }
         jobbot_storage.save_alert_state(self.db, state)
-        loaded = jobbot_storage.load_alert_state(self.db)
+        loaded = cast(dict[str, Any], jobbot_storage.load_alert_state(self.db))
         self.assertIn("https://example.com/job/1", loaded["alerted_links"])
         self.assertEqual(len(loaded["pending_alerts"]), 1)
         self.assertEqual(loaded["last_run_utc"], "2026-04-04T10:00:00Z")
@@ -119,8 +120,10 @@ class TelegramDigestSessionTestCase(StorageTestBase):
         jobbot_storage.save_telegram_digest_session(self.db, "session-abc", "2026-04-04T10:00:00Z", pages)
         loaded = jobbot_storage.load_telegram_digest_session(self.db, "session-abc")
         self.assertIsNotNone(loaded)
-        self.assertEqual(loaded["session_id"], "session-abc")
-        self.assertEqual(len(loaded["pages"]), 2)
+        assert loaded is not None
+        loaded_d = cast(dict[str, Any], loaded)
+        self.assertEqual(loaded_d["session_id"], "session-abc")
+        self.assertEqual(len(loaded_d["pages"]), 2)
 
     def test_load_nonexistent_session_returns_none(self) -> None:
         self.assertIsNone(jobbot_storage.load_telegram_digest_session(self.db, "nonexistent"))

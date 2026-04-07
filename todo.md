@@ -61,7 +61,7 @@
 
 ## Code Quality & Hardening
 
-- [ ] Enable strict mypy for all `jobbot/` modules — currently `ignore_errors = true` is set for `matching`, `common`, `sources`, and `storage` in `pyproject.toml`; fix the suppressed type errors.
+- [x] Enable strict mypy for all `jobbot/` modules — currently `ignore_errors = true` is set for `matching`, `common`, `sources`, and `storage` in `pyproject.toml`; fix the suppressed type errors.
 - [ ] Add docstrings to all public functions, prioritising the scoring pipeline in `matching.py` and source implementations in `sources.py`.
 - [x] Replace f-string SQL table name interpolation in `storage.py` with safe alternatives (validated constants or allowlist checks).
 - [x] Raise pytest coverage threshold from 70% to 85%, with targeted tests for `matching.py` and `sources.py` gap areas.

@@ -2,7 +2,9 @@ import contextlib
 import csv
 import json
 import sqlite3
+from collections.abc import Sequence
 from pathlib import Path
+from typing import cast
 
 CSV_HEADERS = [
     "time", "title", "company", "location", "salary",
@@ -152,7 +154,7 @@ def _next_position(connection: sqlite3.Connection, table: str) -> int:
     return int(row["next_position"]) if row is not None else 0
 
 
-def _dedupe_values(values: list[object]) -> list[str]:
+def _dedupe_values(values: Sequence[object]) -> list[str]:
     cleaned = []
     seen = set()
     for value in values:
@@ -173,8 +175,8 @@ def _index_application(connection: sqlite3.Connection, application: dict[str, ob
     application_link = str(application.get("link", ""))
     if not application_link:
         return
-    link_values = _dedupe_values([*list(application.get("links", [])), application_link])
-    fingerprint_values = _dedupe_values(list(application.get("fingerprints", [])))
+    link_values = _dedupe_values([*cast(list[object], application.get("links", [])), application_link])
+    fingerprint_values = _dedupe_values(cast(list[object], application.get("fingerprints", [])))
     connection.executemany(
         "INSERT OR REPLACE INTO application_links(link_value, application_link) VALUES (?, ?)",
         [(link_value, application_link) for link_value in link_values],
@@ -365,7 +367,7 @@ def append_reviewed_fingerprints(db_file: str, fingerprints: list[str], max_item
 
 
 def save_seen_jobs_state(db_file: str, seen_jobs_state: dict[str, object]) -> None:
-    fingerprints = list(seen_jobs_state.get("reviewed_fingerprints", []))
+    fingerprints = cast(list[object], seen_jobs_state.get("reviewed_fingerprints", []))
     with contextlib.closing(_connect(db_file)) as connection, connection:
         connection.execute("DELETE FROM reviewed_fingerprints")
         connection.executemany(
@@ -405,8 +407,8 @@ def load_alert_state(db_file: str) -> dict[str, object]:
 
 
 def save_alert_state(db_file: str, alert_state: dict[str, object]) -> None:
-    alerted_links = list(alert_state.get("alerted_links", []))
-    pending_alerts = list(alert_state.get("pending_alerts", []))
+    alerted_links = cast(list[object], alert_state.get("alerted_links", []))
+    pending_alerts = cast(list[object], alert_state.get("pending_alerts", []))
     with contextlib.closing(_connect(db_file)) as connection, connection:
         connection.execute("DELETE FROM alerted_links")
         connection.executemany(
@@ -538,7 +540,7 @@ def save_application_record(
 
 
 def save_applications_state(db_file: str, applications_state: dict[str, object]) -> None:
-    applications = list(applications_state.get("applications", []))
+    applications = cast(list[object], applications_state.get("applications", []))
     with contextlib.closing(_connect(db_file)) as connection, connection:
         connection.execute("DELETE FROM applications")
         connection.execute("DELETE FROM application_links")
