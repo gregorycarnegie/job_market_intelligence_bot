@@ -4,7 +4,9 @@ import json
 import logging
 import os
 import re
+import time
 from pathlib import Path
+from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode, urljoin, urlsplit
 from urllib.request import Request, urlopen
 from xml.etree import ElementTree
@@ -32,6 +34,28 @@ from jobbot.models import JobLead, Source
 
 logger = logging.getLogger(__name__)
 
+_RETRY_STATUSES = {429, 500, 502, 503, 504}
+_MAX_RETRIES = 3
+_RETRY_BACKOFF_BASE = 1.0  # seconds; doubles each attempt
+
+
+def _urlopen_with_retry(request: Request, timeout: int) -> object:
+    """Wrap urlopen with exponential-backoff retries for transient failures."""
+    last_exc: Exception | None = None
+    for attempt in range(_MAX_RETRIES):
+        try:
+            return urlopen(request, timeout=timeout)
+        except HTTPError as exc:
+            if exc.code not in _RETRY_STATUSES:
+                raise
+            last_exc = exc
+        except URLError as exc:
+            last_exc = exc
+        delay = _RETRY_BACKOFF_BASE * (2**attempt)
+        logger.warning("Fetch attempt %d/%d failed (%s); retrying in %.0fs", attempt + 1, _MAX_RETRIES, last_exc, delay)
+        time.sleep(delay)
+    raise last_exc  # type: ignore[misc]
+
 
 def fetch_feed(url: str) -> str:
     request = Request(
@@ -43,7 +67,7 @@ def fetch_feed(url: str) -> str:
             "Cache-Control": "no-cache",
         },
     )
-    with urlopen(request, timeout=FETCH_TIMEOUT_SECONDS) as response:
+    with _urlopen_with_retry(request, timeout=FETCH_TIMEOUT_SECONDS) as response:
         charset = response.headers.get_content_charset() or "utf-8"
         return response.read().decode(charset, errors="replace")
 
@@ -59,7 +83,7 @@ def fetch_json(url: str, headers: dict[str, str] | None = None) -> object:
         request_headers.update(headers)
 
     request = Request(url, headers=request_headers)
-    with urlopen(request, timeout=FETCH_TIMEOUT_SECONDS) as response:
+    with _urlopen_with_retry(request, timeout=FETCH_TIMEOUT_SECONDS) as response:
         charset = response.headers.get_content_charset() or "utf-8"
         body = response.read().decode(charset, errors="replace")
     return json.loads(body)
@@ -75,7 +99,7 @@ def fetch_json_post(url: str, body: dict[str, object], headers: dict[str, str] |
         request_headers.update(headers)
     data = json.dumps(body).encode("utf-8")
     request = Request(url, data=data, headers=request_headers)
-    with urlopen(request, timeout=FETCH_TIMEOUT_SECONDS) as response:
+    with _urlopen_with_retry(request, timeout=FETCH_TIMEOUT_SECONDS) as response:
         charset = response.headers.get_content_charset() or "utf-8"
         raw = response.read().decode(charset, errors="replace")
     return json.loads(raw)
