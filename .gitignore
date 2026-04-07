@@ -36,3 +36,9 @@ pytest_error.txt
 *.egg-info/
 
 .claude/
+.codex
+
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+.venv/
