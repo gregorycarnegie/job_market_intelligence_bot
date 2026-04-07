@@ -13,6 +13,15 @@ CSV_HEADERS = [
 
 
 def _connect(db_file: str) -> sqlite3.Connection:
+    """
+    Establish a connection to the SQLite database, initializing it if necessary.
+
+    Args:
+        db_file: Path to the SQLite database file.
+
+    Returns:
+        A sqlite3.Connection object with row_factory set to sqlite3.Row.
+    """
     db_path = Path(db_file)
     if db_path.parent != Path("."):
         db_path.parent.mkdir(parents=True, exist_ok=True)
@@ -25,6 +34,12 @@ def _connect(db_file: str) -> sqlite3.Connection:
 
 
 def _initialize_database(connection: sqlite3.Connection) -> None:
+    """
+    Create necessary tables and indexes if they do not exist.
+
+    Args:
+        connection: An active sqlite3.Connection.
+    """
     connection.executescript(
         """
         CREATE TABLE IF NOT EXISTS jobs (
@@ -129,6 +144,16 @@ def _initialize_database(connection: sqlite3.Connection) -> None:
 
 
 def _load_scope_metadata(connection: sqlite3.Connection, scope: str) -> dict[str, str]:
+    """
+    Load key-value metadata for a specific scope from the state_metadata table.
+
+    Args:
+        connection: SQLite connection.
+        scope: The metadata scope (e.g., 'alerts', 'seen_jobs').
+
+    Returns:
+        A dictionary of key-value pairs.
+    """
     rows = connection.execute(
         "SELECT key, value FROM state_metadata WHERE scope = ?",
         (scope,),
@@ -137,6 +162,14 @@ def _load_scope_metadata(connection: sqlite3.Connection, scope: str) -> dict[str
 
 
 def _save_scope_metadata(connection: sqlite3.Connection, scope: str, metadata: dict[str, object]) -> None:
+    """
+    Save key-value metadata for a specific scope.
+
+    Args:
+        connection: SQLite connection.
+        scope: The metadata scope.
+        metadata: Dictionary of metadata to save.
+    """
     connection.execute("DELETE FROM state_metadata WHERE scope = ?", (scope,))
     connection.executemany(
         "INSERT INTO state_metadata(scope, key, value) VALUES (?, ?, ?)",
@@ -148,6 +181,16 @@ _POSITION_TABLES = {"reviewed_fingerprints", "applications"}
 
 
 def _next_position(connection: sqlite3.Connection, table: str) -> int:
+    """
+    Calculate the next available position index for a table with a position column.
+
+    Args:
+        connection: SQLite connection.
+        table: Table name.
+
+    Returns:
+        The next integer position.
+    """
     if table not in _POSITION_TABLES:
         raise ValueError(f"Invalid table name: {table!r}")
     row = connection.execute(f"SELECT COALESCE(MAX(position), -1) + 1 AS next_position FROM {table}").fetchone()
@@ -155,6 +198,15 @@ def _next_position(connection: sqlite3.Connection, table: str) -> int:
 
 
 def _dedupe_values(values: Sequence[object]) -> list[str]:
+    """
+    Deduplicate a sequence of values while preserving order and removing empties.
+
+    Args:
+        values: Sequence of values to deduplicate.
+
+    Returns:
+        A list of unique non-empty strings.
+    """
     cleaned = []
     seen = set()
     for value in values:
@@ -167,11 +219,25 @@ def _dedupe_values(values: Sequence[object]) -> list[str]:
 
 
 def _delete_application_indexes(connection: sqlite3.Connection, application_link: str) -> None:
+    """
+    Remove link and fingerprint index entries for a specific application.
+
+    Args:
+        connection: SQLite connection.
+        application_link: The primary link of the application record.
+    """
     connection.execute("DELETE FROM application_links WHERE application_link = ?", (application_link,))
     connection.execute("DELETE FROM application_fingerprints WHERE application_link = ?", (application_link,))
 
 
 def _index_application(connection: sqlite3.Connection, application: dict[str, object]) -> None:
+    """
+    Create link and fingerprint index entries for an application record.
+
+    Args:
+        connection: SQLite connection.
+        application: Application record dictionary.
+    """
     application_link = str(application.get("link", ""))
     if not application_link:
         return
@@ -188,6 +254,15 @@ def _index_application(connection: sqlite3.Connection, application: dict[str, ob
 
 
 def load_jobs(db_file: str) -> list[dict[str, str]]:
+    """
+    Load all job records from the database.
+
+    Args:
+        db_file: Path to the database.
+
+    Returns:
+        List of job record dictionaries.
+    """
     with contextlib.closing(_connect(db_file)) as connection:
         rows = connection.execute(
             "SELECT time, title, description, link, company, location, salary,"
@@ -211,6 +286,15 @@ def load_jobs(db_file: str) -> list[dict[str, str]]:
 
 
 def load_latest_job_batch(db_file: str) -> tuple[str | None, list[dict[str, str]]]:
+    """
+    Identify the most recent crawl batch and return its jobs.
+
+    Args:
+        db_file: Path to the database.
+
+    Returns:
+        A tuple of (batch_timestamp_iso, list_of_jobs).
+    """
     with contextlib.closing(_connect(db_file)) as connection:
         row = connection.execute("SELECT time FROM jobs ORDER BY id DESC LIMIT 1").fetchone()
         if row is None:
@@ -241,6 +325,13 @@ def load_latest_job_batch(db_file: str) -> tuple[str | None, list[dict[str, str]
 
 
 def append_jobs(db_file: str, rows: list[dict[str, str]]) -> None:
+    """
+    Bulk insert new job records, ignoring existing links.
+
+    Args:
+        db_file: Path to the database.
+        rows: List of job record dictionaries.
+    """
     if not rows:
         return
 
@@ -273,6 +364,13 @@ def append_jobs(db_file: str, rows: list[dict[str, str]]) -> None:
 
 
 def export_jobs_to_csv(db_file: str, csv_file: str) -> None:
+    """
+    Export all job records from the database to a CSV file.
+
+    Args:
+        db_file: Path to the database.
+        csv_file: Output CSV file path.
+    """
     csv_path = Path(csv_file)
     rows = load_jobs(db_file)
     with open(csv_path, "w", encoding="utf-8", newline="") as handle:
@@ -282,12 +380,28 @@ def export_jobs_to_csv(db_file: str, csv_file: str) -> None:
 
 
 def load_feed_state(db_file: str) -> dict[str, dict[str, float]]:
+    """
+    Load the state of all job feeds (last checked timestamps).
+
+    Args:
+        db_file: Path to the database.
+
+    Returns:
+        A dictionary mapping feed names to their state.
+    """
     with contextlib.closing(_connect(db_file)) as connection:
         rows = connection.execute("SELECT name, last_checked_at FROM feed_state ORDER BY name").fetchall()
     return {str(row["name"]): {"last_checked_at": float(row["last_checked_at"])} for row in rows}
 
 
 def save_feed_state(db_file: str, feed_state: dict[str, dict[str, float]]) -> None:
+    """
+    Save the state of all job feeds.
+
+    Args:
+        db_file: Path to the database.
+        feed_state: Dictionary of feed states.
+    """
     with contextlib.closing(_connect(db_file)) as connection, connection:
         connection.execute("DELETE FROM feed_state")
         connection.executemany(
@@ -303,6 +417,15 @@ def save_feed_state(db_file: str, feed_state: dict[str, dict[str, float]]) -> No
 
 
 def load_seen_jobs_state(db_file: str) -> dict[str, object]:
+    """
+    Load the state of seen jobs and reviewed fingerprints.
+
+    Args:
+        db_file: Path to the database.
+
+    Returns:
+        State dictionary including reviewed_fingerprints list and last_run_utc.
+    """
     with contextlib.closing(_connect(db_file)) as connection:
         fingerprints = [
             str(row["fingerprint"])
@@ -317,12 +440,31 @@ def load_seen_jobs_state(db_file: str) -> dict[str, object]:
 
 
 def reviewed_fingerprint_count(db_file: str) -> int:
+    """
+    Count the number of reviewed job fingerprints in the database.
+
+    Args:
+        db_file: Path to the database.
+
+    Returns:
+        The total count of reviewed fingerprints.
+    """
     with contextlib.closing(_connect(db_file)) as connection:
         row = connection.execute("SELECT COUNT(*) AS count FROM reviewed_fingerprints").fetchone()
     return int(row["count"]) if row is not None else 0
 
 
 def has_any_reviewed_fingerprint(db_file: str, fingerprints: list[str]) -> bool:
+    """
+    Check if any of the provided fingerprints have been previously reviewed.
+
+    Args:
+        db_file: Path to the database.
+        fingerprints: List of fingerprints to check.
+
+    Returns:
+        True if at least one fingerprint is found in the database.
+    """
     candidates = _dedupe_values(fingerprints)
     if not candidates:
         return False
@@ -336,6 +478,14 @@ def has_any_reviewed_fingerprint(db_file: str, fingerprints: list[str]) -> bool:
 
 
 def append_reviewed_fingerprints(db_file: str, fingerprints: list[str], max_items: int) -> None:
+    """
+    Append new fingerprints to the reviewed list, enforcing a maximum size.
+
+    Args:
+        db_file: Path to the database.
+        fingerprints: New fingerprints to add.
+        max_items: Maximum capacity for the reviewed fingerprints list.
+    """
     candidates = _dedupe_values(fingerprints)
     if not candidates:
         return
@@ -367,6 +517,13 @@ def append_reviewed_fingerprints(db_file: str, fingerprints: list[str], max_item
 
 
 def save_seen_jobs_state(db_file: str, seen_jobs_state: dict[str, object]) -> None:
+    """
+    Bulk save the seen jobs state, replacing existing data.
+
+    Args:
+        db_file: Path to the database.
+        seen_jobs_state: State dictionary to save.
+    """
     fingerprints = cast(list[object], seen_jobs_state.get("reviewed_fingerprints", []))
     with contextlib.closing(_connect(db_file)) as connection, connection:
         connection.execute("DELETE FROM reviewed_fingerprints")
@@ -382,6 +539,15 @@ def save_seen_jobs_state(db_file: str, seen_jobs_state: dict[str, object]) -> No
 
 
 def load_alert_state(db_file: str) -> dict[str, object]:
+    """
+    Load the alert history and pending notifications state.
+
+    Args:
+        db_file: Path to the database.
+
+    Returns:
+        State dictionary including alerted_links, pending_alerts, and metadata.
+    """
     with contextlib.closing(_connect(db_file)) as connection:
         alerted_links = [
             str(row["link"])
@@ -407,6 +573,13 @@ def load_alert_state(db_file: str) -> dict[str, object]:
 
 
 def save_alert_state(db_file: str, alert_state: dict[str, object]) -> None:
+    """
+    Bulk save the alert state, replacing existing data.
+
+    Args:
+        db_file: Path to the database.
+        alert_state: State dictionary to save.
+    """
     alerted_links = cast(list[object], alert_state.get("alerted_links", []))
     pending_alerts = cast(list[object], alert_state.get("pending_alerts", []))
     with contextlib.closing(_connect(db_file)) as connection, connection:
@@ -440,6 +613,15 @@ def save_alert_state(db_file: str, alert_state: dict[str, object]) -> None:
 
 
 def load_applications_state(db_file: str) -> dict[str, object]:
+    """
+    Load all application records and associated metadata.
+
+    Args:
+        db_file: Path to the database.
+
+    Returns:
+        State dictionary including applications list and metadata.
+    """
     with contextlib.closing(_connect(db_file)) as connection:
         applications = []
         for row in connection.execute("SELECT payload_json FROM applications ORDER BY position").fetchall():
@@ -467,6 +649,17 @@ def find_application_by_link_or_fingerprints(
     link: str,
     fingerprints: list[str],
 ) -> tuple[str | None, dict[str, object] | None]:
+    """
+    Search for an existing application record using multiple identifiers.
+
+    Args:
+        db_file: Path to the database.
+        link: A job link to search for.
+        fingerprints: A list of content fingerprints to search for.
+
+    Returns:
+        A tuple of (primary_link, payload_dict) if found, else (None, None).
+    """
     candidate_link = str(link)
     candidate_fingerprints = _dedupe_values(fingerprints)
     with contextlib.closing(_connect(db_file)) as connection:
@@ -507,6 +700,14 @@ def save_application_record(
     application: dict[str, object],
     previous_link: str | None = None,
 ) -> None:
+    """
+    Save or update a single application record and refresh its indexes.
+
+    Args:
+        db_file: Path to the database.
+        application: The application record to save.
+        previous_link: Optional old link if the primary link is being changed.
+    """
     application_link = str(application.get("link", ""))
     if not application_link:
         return
@@ -540,6 +741,13 @@ def save_application_record(
 
 
 def save_applications_state(db_file: str, applications_state: dict[str, object]) -> None:
+    """
+    Bulk save the entire applications state and rebuild all indexes.
+
+    Args:
+        db_file: Path to the database.
+        applications_state: State dictionary to save.
+    """
     applications = cast(list[object], applications_state.get("applications", []))
     with contextlib.closing(_connect(db_file)) as connection, connection:
         connection.execute("DELETE FROM applications")
@@ -575,6 +783,15 @@ def save_applications_state(db_file: str, applications_state: dict[str, object])
 
 
 def load_telegram_update_offset(db_file: str) -> int:
+    """
+    Load the Telegram update offset (for polling) from the database.
+
+    Args:
+        db_file: Path to the database.
+
+    Returns:
+        The last processed update ID.
+    """
     with contextlib.closing(_connect(db_file)) as connection:
         metadata = _load_scope_metadata(connection, "telegram")
     try:
@@ -584,6 +801,13 @@ def load_telegram_update_offset(db_file: str) -> int:
 
 
 def save_telegram_update_offset(db_file: str, offset: int) -> None:
+    """
+    Save the Telegram update offset.
+
+    Args:
+        db_file: Path to the database.
+        offset: The update ID to save.
+    """
     with contextlib.closing(_connect(db_file)) as connection, connection:
         connection.execute(
             "INSERT OR REPLACE INTO state_metadata(scope, key, value) VALUES ('telegram', 'update_offset', ?)",
@@ -598,6 +822,16 @@ def save_telegram_digest_session(
     pages: list[str],
     keep_latest: int = 20,
 ) -> None:
+    """
+    Save a Telegram digest pagination session.
+
+    Args:
+        db_file: Path to the database.
+        session_id: Unique session ID.
+        created_at: Creation timestamp.
+        pages: List of formatted message pages.
+        keep_latest: Max number of history sessions to retain.
+    """
     with contextlib.closing(_connect(db_file)) as connection, connection:
         connection.execute(
             """
@@ -626,6 +860,16 @@ def save_telegram_digest_session(
 
 
 def load_telegram_digest_session(db_file: str, session_id: str) -> dict[str, object] | None:
+    """
+    Load a Telegram digest pagination session by its ID.
+
+    Args:
+        db_file: Path to the database.
+        session_id: The session ID to look up.
+
+    Returns:
+        The session dictionary or None if not found or invalid.
+    """
     with contextlib.closing(_connect(db_file)) as connection:
         row = connection.execute(
             """

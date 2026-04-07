@@ -61,6 +61,15 @@ def _urlopen_with_retry(request: Request, timeout: int) -> http.client.HTTPRespo
 
 
 def fetch_feed(url: str) -> str:
+    """
+    Fetch raw text content from a URL with retries and standard headers.
+
+    Args:
+        url: The URL to fetch.
+
+    Returns:
+        The decoded response body as a string.
+    """
     request = Request(
         url,
         headers={
@@ -76,6 +85,16 @@ def fetch_feed(url: str) -> str:
 
 
 def fetch_json(url: str, headers: dict[str, str] | None = None) -> object:
+    """
+    Fetch and parse JSON content from a URL.
+
+    Args:
+        url: The URL to fetch.
+        headers: Optional additional HTTP headers.
+
+    Returns:
+        The parsed JSON object.
+    """
     request_headers = {
         "User-Agent": USER_AGENT,
         "Accept": "application/json,text/plain;q=0.9,*/*;q=0.8",
@@ -93,6 +112,17 @@ def fetch_json(url: str, headers: dict[str, str] | None = None) -> object:
 
 
 def fetch_json_post(url: str, body: dict[str, object], headers: dict[str, str] | None = None) -> object:
+    """
+    Perform a JSON POST request and return the parsed response.
+
+    Args:
+        url: The URL to post to.
+        body: The JSON payload.
+        headers: Optional additional HTTP headers.
+
+    Returns:
+        The parsed JSON response object.
+    """
     request_headers = {
         "User-Agent": USER_AGENT,
         "Accept": "application/json,text/plain;q=0.9,*/*;q=0.8",
@@ -125,6 +155,17 @@ def strip_html_noise(html_text: str) -> str:
 
 
 def extract_meta_content(html_text: str, attr_name: str, attr_value: str) -> str:
+    """
+    Extract the 'content' attribute from a <meta> tag with a specific attribute pair.
+
+    Args:
+        html_text: The raw HTML text.
+        attr_name: The attribute name to match (e.g., "property" or "name").
+        attr_value: The attribute value to match (e.g., "og:title").
+
+    Returns:
+        The content of the meta tag, or an empty string.
+    """
     pattern = re.compile(
         rf"<meta\b[^>]*{attr_name}=[\"']{re.escape(attr_value)}[\"'][^>]*content=[\"'](.*?)[\"'][^>]*>",
         re.IGNORECASE | re.DOTALL,
@@ -218,6 +259,15 @@ def extract_jsonld_objects(html_text: str) -> list[object]:
 
 
 def iter_json_nodes(payload: object):
+    """
+    Recursively yield all dictionary nodes found within a JSON-like object.
+
+    Args:
+        payload: The JSON object to traverse.
+
+    Yields:
+        Individual dictionary nodes.
+    """
     if isinstance(payload, dict):
         yield payload
         for value in payload.values():
@@ -228,6 +278,16 @@ def iter_json_nodes(payload: object):
 
 
 def node_has_type(node: Mapping[str, object], target_type: str) -> bool:
+    """
+    Check if a JSON-LD node has a specific @type.
+
+    Args:
+        node: The node dictionary.
+        target_type: The type name to check for.
+
+    Returns:
+        True if the type matches.
+    """
     raw_type = node.get("@type")
     if isinstance(raw_type, list):
         return any(clean_text(str(item)).lower() == target_type.lower() for item in raw_type)
@@ -235,6 +295,15 @@ def node_has_type(node: Mapping[str, object], target_type: str) -> bool:
 
 
 def extract_jobposting_nodes(html_text: str) -> list[dict[str, object]]:
+    """
+    Identify and extract all 'JobPosting' JSON-LD nodes from HTML.
+
+    Args:
+        html_text: The HTML document text.
+
+    Returns:
+        A list of JobPosting dictionaries.
+    """
     nodes = []
     for payload in extract_jsonld_objects(html_text):
         for node in iter_json_nodes(payload):
@@ -244,6 +313,15 @@ def extract_jobposting_nodes(html_text: str) -> list[dict[str, object]]:
 
 
 def format_jsonld_address(address: object) -> str:
+    """
+    Format a JSON-LD 'PostalAddress' node into a single line string.
+
+    Args:
+        address: The address dictionary node.
+
+    Returns:
+        A formatted address string.
+    """
     if not isinstance(address, dict):
         return ""
     return join_text_parts(
@@ -256,6 +334,15 @@ def format_jsonld_address(address: object) -> str:
 
 
 def extract_jsonld_location_text(node: Mapping[str, object]) -> str:
+    """
+    Extract a descriptive location string from a 'JobPosting' or 'jobLocation' node.
+
+    Args:
+        node: The JSON-LD node.
+
+    Returns:
+        A combined location string.
+    """
     locations = []
     if clean_text(str(node.get("jobLocationType", ""))).lower() == "telecommute":
         locations.append("remote")
@@ -277,6 +364,15 @@ def extract_jsonld_location_text(node: Mapping[str, object]) -> str:
 
 
 def normalize_salary_unit_text(unit_text: object) -> str:
+    """
+    Normalize salary unit/frequency strings into standard keys (year, month, day, hour).
+
+    Args:
+        unit_text: The raw unit text from a provider.
+
+    Returns:
+        A standardized cadence string.
+    """
     normalized = normalize_text(str(unit_text)).replace(" ", "")
     mapping = {
         "year": "year",
@@ -312,6 +408,15 @@ def format_provider_salary_text(
 
 
 def extract_jsonld_salary_text(node: Mapping[str, object]) -> str:
+    """
+    Extract salary information from a JSON-LD 'baseSalary' property and format it.
+
+    Args:
+        node: The JobPosting node.
+
+    Returns:
+        A formatted salary description string.
+    """
     base_salary = node.get("baseSalary")
     candidates = base_salary if isinstance(base_salary, list) else [base_salary]
     for candidate in candidates:
@@ -410,6 +515,16 @@ def extract_anchor_links(html_text: str, base_url: str) -> list[tuple[str, str]]
 
 
 def url_matches_allowed_domains(url: str, allowed_domains: list[str]) -> bool:
+    """
+    Check if a URL belongs to one of the specified allowed domains.
+
+    Args:
+        url: The URL to check.
+        allowed_domains: List of domain names.
+
+    Returns:
+        True if the URL matches.
+    """
     try:
         netloc = urlsplit(url).netloc.lower()
     except ValueError:
@@ -426,6 +541,17 @@ def looks_like_generic_job_link(
     anchor_text: str,
     board: Mapping[str, object],
 ) -> bool:
+    """
+    Heuristically determine if a link on a generic page points to a job posting.
+
+    Args:
+        url: The link URL.
+        anchor_text: The text inside the <a> tag.
+        board: The board configuration containing keywords and regexes.
+
+    Returns:
+        True if the link looks like a job lead.
+    """
     if not url_matches_allowed_domains(url, cast(list[str], board["allowed_domains"])):
         return False
 
@@ -463,6 +589,8 @@ def fallback_generic_job_item(html_text: str, url: str, display_name: str) -> Jo
 
 
 class GenericHtmlSource(Source):
+    """Source handler for scraping generic HTML pages for job links."""
+
     def fetch(self) -> list[JobLead]:
         board = self.config
         candidate_links = []
@@ -506,6 +634,15 @@ class GenericHtmlSource(Source):
 
 
 def sanitize_xml(xml_raw: str) -> str:
+    """
+    Clean up common XML parsing blockers like unescaped ampersands or &nbsp;.
+
+    Args:
+        xml_raw: The raw XML string.
+
+    Returns:
+        The sanitized XML string.
+    """
     cleaned = xml_raw
     cleaned = cleaned.replace("&nbsp;", " ")
     cleaned = re.sub(r"&(?!#?[a-z0-9]+;)", "&amp;", cleaned, flags=re.IGNORECASE)
@@ -513,12 +650,30 @@ def sanitize_xml(xml_raw: str) -> str:
 
 
 def local_name(tag: str) -> str:
+    """
+    Extract the local name of an XML tag, ignoring any namespace prefix.
+
+    Args:
+        tag: The full tag name (possibly with {namespace}).
+
+    Returns:
+        The local part of the tag name.
+    """
     if "}" in tag:
         return tag.rsplit("}", 1)[-1]
     return tag
 
 
 def extract_link(item: ElementTree.Element) -> str:
+    """
+    Extract a job link from an RSS/Atom item element.
+
+    Args:
+        item: The XML element.
+
+    Returns:
+        The link URL.
+    """
     for child in item:
         tag = local_name(child.tag)
         if tag != "link":
@@ -532,6 +687,15 @@ def extract_link(item: ElementTree.Element) -> str:
 
 
 def extract_description(item: ElementTree.Element) -> str:
+    """
+    Extract the description or content from an RSS/Atom item element.
+
+    Args:
+        item: The XML element.
+
+    Returns:
+        The combined text content.
+    """
     desc_tags = {"description", "summary", "encoded", "content"}
     for child in item:
         if local_name(child.tag) in desc_tags:
@@ -540,6 +704,16 @@ def extract_description(item: ElementTree.Element) -> str:
 
 
 def parse_structured_feed(xml_text: str, display_name: str = "") -> list[JobLead]:
+    """
+    Standard XML parsing for RSS and Atom feeds into JobLead objects.
+
+    Args:
+        xml_text: The feed XML.
+        display_name: Source name to attribute to the items.
+
+    Returns:
+        List of JobLead objects.
+    """
     root = ElementTree.fromstring(xml_text)
     items = []
     seen_links = set()
@@ -581,6 +755,16 @@ def parse_structured_feed(xml_text: str, display_name: str = "") -> list[JobLead
 
 
 def extract_tag_text(block: str, tag_names: list[str]) -> str:
+    """
+    Extract text content from the first matching regex tag in a raw text block.
+
+    Args:
+        block: The raw text block (e.g. an XML snippet).
+        tag_names: List of tag names to try.
+
+    Returns:
+        The extracted inner text.
+    """
     for tag_name in tag_names:
         pattern = re.compile(
             rf"<{tag_name}\b[^>]*>(.*?)</{tag_name}>",
@@ -593,6 +777,16 @@ def extract_tag_text(block: str, tag_names: list[str]) -> str:
 
 
 def parse_fallback_feed(xml_text: str, display_name: str = "") -> list[JobLead]:
+    """
+    Regex-based fallback parsing for inconsistent or malformed XML feeds.
+
+    Args:
+        xml_text: The raw XML text.
+        display_name: Source name for the items.
+
+    Returns:
+        List of JobLead objects.
+    """
     items = []
     blocks = re.findall(r"<(item|entry|job)\b[^>]*>(.*?)</\1>", xml_text, re.IGNORECASE | re.DOTALL)
 
@@ -628,6 +822,8 @@ def parse_fallback_feed(xml_text: str, display_name: str = "") -> list[JobLead]:
 
 
 class RssSource(Source):
+    """Source handler for standard RSS and Atom feeds."""
+
     def fetch(self) -> list[JobLead]:
         source = self.config
         xml_raw = fetch_feed(str(source.get("url", "")))
@@ -646,6 +842,8 @@ class RssSource(Source):
 
 
 class EfcHtmlSource(Source):
+    """Source handler for eFinancialCareers HTML job listings."""
+
     def fetch(self) -> list[JobLead]:
         source = self.config
         html_text = fetch_feed(str(source.get("url", "")))
@@ -777,6 +975,15 @@ def normalize_company_board(raw_board: Mapping[str, object]) -> dict[str, object
 
 
 def load_company_boards(company_boards_file: str) -> list[dict[str, object]]:
+    """
+    Load and normalize all company board configurations from a JSON file.
+
+    Args:
+        company_boards_file: Path to the boards JSON file.
+
+    Returns:
+        A list of normalized board configuration dictionaries.
+    """
     boards_path = Path(company_boards_file)
     if not boards_path.exists():
         return []
@@ -814,6 +1021,8 @@ def load_company_boards(company_boards_file: str) -> list[dict[str, object]]:
 
 
 class GreenhouseSource(Source):
+    """Source handler for Greenhouse.io job boards."""
+
     def fetch(self) -> list[JobLead]:
         board = self.config
         payload = fetch_json(f"https://boards-api.greenhouse.io/v1/boards/{board['board_token']}/jobs?content=true")
@@ -855,6 +1064,8 @@ class GreenhouseSource(Source):
 
 
 class LeverSource(Source):
+    """Source handler for Lever.co job boards."""
+
     def fetch(self) -> list[JobLead]:
         board = self.config
         instance = normalize_text(str(board.get("instance", "global"))) or "global"
@@ -910,6 +1121,8 @@ class LeverSource(Source):
 
 
 class AshbySource(Source):
+    """Source handler for Ashbyhq.com job boards."""
+
     def fetch(self) -> list[JobLead]:
         board = self.config
         payload = fetch_json(
@@ -948,6 +1161,8 @@ class AshbySource(Source):
 
 
 class WorkableSource(Source):
+    """Source handler for Workable.com job boards."""
+
     def fetch(self) -> list[JobLead]:
         board = self.config
         subdomain = str(board["account_subdomain"])
@@ -1002,6 +1217,8 @@ class WorkableSource(Source):
 
 
 class AdzunaSource(Source):
+    """Source handler for the Adzuna Job API."""
+
     def fetch(self) -> list[JobLead]:
         source = self.config
         app_id = os.environ.get("ADZUNA_APP_ID", "").strip()
@@ -1082,6 +1299,8 @@ class AdzunaSource(Source):
 
 
 class ReedSource(Source):
+    """Source handler for the Reed.co.uk Job API."""
+
     def fetch(self) -> list[JobLead]:
         source = self.config
         api_key = os.environ.get("REED_APP_KEY", "").strip()
@@ -1144,6 +1363,8 @@ class ReedSource(Source):
 
 
 class JoobleSource(Source):
+    """Source handler for the Jooble Job API."""
+
     def fetch(self) -> list[JobLead]:
         source = self.config
         api_key = os.environ.get("JOOBLE_APP_KEY", "").strip()
@@ -1191,6 +1412,8 @@ class JoobleSource(Source):
 
 
 class TheMuseSource(Source):
+    """Source handler for TheMuse.com Job API."""
+
     def fetch(self) -> list[JobLead]:
         source = self.config
         category = clean_text(str(source.get("category", "IT & Data")))
@@ -1260,6 +1483,8 @@ class TheMuseSource(Source):
 
 
 class ArbeitnowSource(Source):
+    """Source handler for the Arbeitnow Job API."""
+
     def fetch(self) -> list[JobLead]:
         source = self.config
         display_name = str(source.get("display_name", "") or source.get("name", "Arbeitnow"))
@@ -1316,6 +1541,8 @@ class ArbeitnowSource(Source):
 
 
 class RemotiveSource(Source):
+    """Source handler for the Remotive.com Remote Job API."""
+
     def fetch(self) -> list[JobLead]:
         source = self.config
         category = clean_text(str(source.get("category", "software-dev")))
@@ -1359,6 +1586,15 @@ class RemotiveSource(Source):
 
 
 def create_source(source_config: dict[str, object]) -> Source:
+    """
+    Factory function to create the appropriate Source instance for a config.
+
+    Args:
+        source_config: Configuration dictionary for the source.
+
+    Returns:
+        An instance of a Source subclass.
+    """
     platform = str(source_config.get("platform", ""))
     if platform == "greenhouse":
         return GreenhouseSource(source_config)
@@ -1397,7 +1633,16 @@ def create_source(source_config: dict[str, object]) -> Source:
 
 
 def parse_feed_items(xml_text: str, display_name: str = "") -> list[JobLead]:
-    """Try structured parse first, fall back to regex parse on error."""
+    """
+    Parse XML feed items using structured parsing with a fallback to regex.
+
+    Args:
+        xml_text: Raw XML content.
+        display_name: Source display name.
+
+    Returns:
+        List of JobLead objects.
+    """
     try:
         return parse_structured_feed(xml_text, display_name)
     except ElementTree.ParseError:
@@ -1412,7 +1657,16 @@ def parse_feed_items(xml_text: str, display_name: str = "") -> list[JobLead]:
 
 
 def parse_efinancialcareers_html(html_text: str, source: Mapping[str, object]) -> list[JobLead]:
-    """Parse eFinancialCareers HTML page and return JobLead items."""
+    """
+    Parse eFinancialCareers HTML content into JobLead objects.
+
+    Args:
+        html_text: Raw HTML content.
+        source: Source configuration mapping.
+
+    Returns:
+        List of JobLead objects.
+    """
     cfg = {"url": "", "display_name": "", "name": "", **source}
     src = EfcHtmlSource(cfg)
     # Monkeypatch fetch to return the supplied html_text directly
@@ -1423,18 +1677,22 @@ def parse_efinancialcareers_html(html_text: str, source: Mapping[str, object]) -
 
 
 def fetch_greenhouse_board_jobs(board: Mapping[str, object]) -> list[JobLead]:
+    """Compatibility shim for Greenhouse board fetching."""
     return GreenhouseSource(board).fetch()
 
 
 def fetch_lever_board_jobs(board: Mapping[str, object]) -> list[JobLead]:
+    """Compatibility shim for Lever board fetching."""
     return LeverSource(board).fetch()
 
 
 def fetch_ashby_board_jobs(board: Mapping[str, object]) -> list[JobLead]:
+    """Compatibility shim for Ashby board fetching."""
     return AshbySource(board).fetch()
 
 
 def fetch_workable_board_jobs(board: Mapping[str, object]) -> list[JobLead]:
+    """Compatibility shim for Workable board fetching."""
     return WorkableSource(board).fetch()
 
 
@@ -1448,7 +1706,15 @@ _PLATFORM_HANDLERS: dict[str, type] = {
 
 
 def fetch_company_board_items(board: Mapping[str, object]) -> list[JobLead]:
-    """Dispatch to the correct handler based on the board platform."""
+    """
+    Fetch job items from a specific company board platform.
+
+    Args:
+        board: Board configuration mapping.
+
+    Returns:
+        List of JobLead objects.
+    """
     platform = str(board.get("platform", ""))
     if platform == "greenhouse":
         return fetch_greenhouse_board_jobs(board)
@@ -1464,7 +1730,16 @@ def fetch_company_board_items(board: Mapping[str, object]) -> list[JobLead]:
 
 
 def parse_source_items(source: Mapping[str, object], xml_raw: str) -> list[JobLead]:
-    """Parse raw XML/HTML for a non-board (RSS/EFC) source."""
+    """
+    Parse job items from a source's raw response content.
+
+    Args:
+        source: Source configuration mapping.
+        xml_raw: Raw response content (XML or HTML).
+
+    Returns:
+        List of JobLead objects.
+    """
     source_type = str(source.get("type", ""))
     display_name = str(source.get("display_name", "") or source.get("name", ""))
     if source_type == "efc_html":

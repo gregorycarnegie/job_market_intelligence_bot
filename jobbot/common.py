@@ -117,8 +117,11 @@ CURRENCY_TO_GBP = {
 
 
 def fetch_live_currency_rates() -> None:
-    """Fetch live GBP exchange rates from Frankfurter (ECB data) and update CURRENCY_TO_GBP in-place.
-    Falls back silently to the hardcoded rates on any error."""
+    """
+    Fetch live GBP exchange rates from Frankfurter (ECB data) and update CURRENCY_TO_GBP in-place.
+
+    Falls back silently to the hardcoded rates on any error.
+    """
     try:
         req = urllib.request.Request(
             "https://api.frankfurter.dev/v1/latest?from=GBP&to=USD,EUR",
@@ -427,6 +430,15 @@ def strip_cdata(text: str) -> str:
 
 
 def strip_tags(text: str) -> str:
+    """
+    Remove all HTML tags from a string.
+
+    Args:
+        text: The string containing HTML tags.
+
+    Returns:
+        The string with tags replaced by spaces.
+    """
     return re.sub(r"<[^>]+>", " ", text)
 
 
@@ -448,6 +460,16 @@ def compile_skill_pattern(skill: str) -> re.Pattern[str] | None:
 
 
 def contains_phrase(text: str, phrase: str) -> bool:
+    """
+    Check if a text contains a specific phrase as a whole word (case-insensitive).
+
+    Args:
+        text: The text to search within.
+        phrase: The phrase to search for.
+
+    Returns:
+        True if the phrase is found.
+    """
     pattern = compile_skill_pattern(phrase)
     return bool(pattern and pattern.search(text))
 
@@ -477,11 +499,29 @@ def build_pattern_entries(values: list[str]) -> list[PatternEntry]:
 
 
 def find_pattern_matches(text: str, entries: list[PatternEntry], limit: int = 0) -> list[str]:
+    """
+    Find which pre-compiled patterns match the given text.
+
+    Args:
+        text: The text to search.
+        entries: List of pattern entries (label, regex).
+        limit: Optional maximum number of matches to return.
+
+    Returns:
+        A list of labels for the matching patterns.
+    """
     matches = [label for label, pattern in entries if pattern.search(text)]
     return matches[:limit] if limit else matches
 
 
 def append_reason(reasons: list[str], message: str) -> None:
+    """
+    Add a unique, cleaned reason message to a list.
+
+    Args:
+        reasons: The list of reason strings to append to.
+        message: The new reason message.
+    """
     clean_message = clean_text(message)
     if clean_message and clean_message not in reasons:
         reasons.append(clean_message)
@@ -548,6 +588,12 @@ def dedupe_preserving_order(values: list[str]) -> list[str]:
 
 
 def fresh_alert_state() -> dict[str, object]:
+    """
+    Initialize a fresh alert state dictionary.
+
+    Returns:
+        A state dictionary with empty lists and strings.
+    """
     return {
         "alerted_links": [],
         "pending_alerts": [],
@@ -558,6 +604,12 @@ def fresh_alert_state() -> dict[str, object]:
 
 
 def fresh_seen_jobs_state() -> dict[str, object]:
+    """
+    Initialize a fresh seen jobs tracker state.
+
+    Returns:
+        A state dictionary with empty fingerprints list.
+    """
     return {
         "reviewed_fingerprints": [],
         "last_run_utc": "",
@@ -565,6 +617,12 @@ def fresh_seen_jobs_state() -> dict[str, object]:
 
 
 def fresh_applications_state() -> dict[str, object]:
+    """
+    Initialize a fresh applications tracker state.
+
+    Returns:
+        A state dictionary with empty applications list and metadata.
+    """
     return {
         "applications": [],
         "last_updated_utc": "",
@@ -577,11 +635,30 @@ def fresh_applications_state() -> dict[str, object]:
 
 
 def join_text_parts(*parts: object) -> str:
+    """
+    Combine multiple text fragments into a single space-separated, cleaned string.
+
+    Args:
+        *parts: Variable number of objects to convert to strings and join.
+
+    Returns:
+        A single cleaned string.
+    """
     cleaned_parts = [clean_text(str(part)) for part in parts if clean_text(str(part))]
     return " ".join(cleaned_parts)
 
 
 def normalize_string_list(values: object, *, lower: bool = False) -> list[str]:
+    """
+    Normalize a list of strings, removing duplicates and preserving order.
+
+    Args:
+        values: A list of strings or a single string.
+        lower: Whether to convert strings to lowercase.
+
+    Returns:
+        A list of cleaned, unique strings.
+    """
     raw_values = values if isinstance(values, list) else [values] if values else []
     normalized_values = []
     seen: set[str] = set()
@@ -594,6 +671,15 @@ def normalize_string_list(values: object, *, lower: bool = False) -> list[str]:
 
 
 def normalize_url_list(values: object) -> list[str]:
+    """
+    Validate and normalize a list of URLs.
+
+    Args:
+        values: A list of candidate URLs.
+
+    Returns:
+        A list of valid, normalized, unique HTTP(S) URLs.
+    """
     urls = []
     for value in values if isinstance(values, list) else [values] if values else []:
         url = clean_text(str(value))
@@ -603,6 +689,15 @@ def normalize_url_list(values: object) -> list[str]:
 
 
 def normalize_link_for_fingerprint(link: str) -> str:
+    """
+    Standardize a job link for deduplication by removing tracking parameters and scheme inconsistences.
+
+    Args:
+        link: The raw URL.
+
+    Returns:
+        A normalized URL string.
+    """
     raw = html.unescape((link or "").strip())
     if not raw:
         return ""
@@ -636,6 +731,15 @@ def normalize_link_for_fingerprint(link: str) -> str:
 
 
 def looks_like_job_title(text: str) -> bool:
+    """
+    Heuristically determine if a piece of text looks like a job title.
+
+    Args:
+        text: The candidate string.
+
+    Returns:
+        True if the text contains job-related keywords.
+    """
     normalized = normalize_text(text)
     return bool(normalized and JOB_TITLE_HINT_RE.search(normalized))
 
@@ -660,6 +764,15 @@ def normalize_company_name(company: str) -> str:
 
 
 def split_title_and_company(title: str) -> tuple[str, str]:
+    """
+    Attempt to split a combined 'Title - Company' string into separate parts.
+
+    Args:
+        title: The combined title string.
+
+    Returns:
+        A tuple of (role_title, company_name).
+    """
     clean_title = clean_text(title)
     if not clean_title:
         return "", ""
@@ -727,6 +840,15 @@ def build_review_fingerprints(title: str, description: str, link: str) -> list[s
 
 
 def expand_location_terms(values: list[str]) -> list[str]:
+    """
+    Expand a list of locations to include known aliases (e.g., 'UK' -> 'United Kingdom').
+
+    Args:
+        values: List of location names.
+
+    Returns:
+        A sorted list of unique locations and their aliases.
+    """
     expanded = set()
     for value in values:
         if not value:
@@ -738,6 +860,15 @@ def expand_location_terms(values: list[str]) -> list[str]:
 
 
 def build_resume_evidence_entries(resume: dict[str, object]) -> list[dict[str, str]]:
+    """
+    Deconstruct a resume dictionary into a list of searchable experience/summary entries.
+
+    Args:
+        resume: The parsed resume JSON object.
+
+    Returns:
+        A list of entries with labels and normalized text content.
+    """
     entries = []
 
     summary = clean_text(str(resume.get("summary", "")))
@@ -779,6 +910,15 @@ def build_resume_evidence_entries(resume: dict[str, object]) -> list[dict[str, s
 
 
 def load_resume_profile(resume_file: str) -> dict[str, object]:
+    """
+    Load a candidate resume from JSON and pre-process it for matching.
+
+    Args:
+        resume_file: Path to the resume JSON file.
+
+    Returns:
+        A profile dictionary with pre-compiled pattern entries and expanded locations.
+    """
     with open(resume_file, encoding="utf-8") as f:
         resume = json.load(f)
 
@@ -821,6 +961,15 @@ def load_resume_profile(resume_file: str) -> dict[str, object]:
 
 
 def normalize_company_control_values(values: object) -> list[str]:
+    """
+    Normalize a list of company names for control lists (whitelist/blacklist).
+
+    Args:
+        values: List of company names.
+
+    Returns:
+        List of cleaned, normalized, unique company names.
+    """
     normalized_values = []
     for value in values if isinstance(values, list) else [values] if values else []:
         normalized_company = normalize_company_name(clean_text(str(value)))
@@ -830,6 +979,16 @@ def normalize_company_control_values(values: object) -> list[str]:
 
 
 def normalize_role_profile(raw_profile: dict[str, object], index: int) -> dict[str, object] | None:
+    """
+    Validate and compile a role profile configuration.
+
+    Args:
+        raw_profile: Raw dictionary from config.
+        index: Index of the profile (used as fallback name).
+
+    Returns:
+        A normalized profile with compiled regex entries, or None.
+    """
     name = normalize_text(str(raw_profile.get("name", ""))) or f"role_profile_{index}"
     display_name = clean_text(str(raw_profile.get("display_name", ""))) or name.replace("_", " ").title()
     title_keywords = raw_profile.get("title_keywords")
@@ -858,6 +1017,15 @@ def normalize_role_profile(raw_profile: dict[str, object], index: int) -> dict[s
 
 
 def normalize_role_profiles(raw_profiles: object) -> list[dict[str, object]]:
+    """
+    Load and normalize all role profiles, ensuring defaults are used if none provided.
+
+    Args:
+        raw_profiles: List of raw role profile dictionaries.
+
+    Returns:
+        List of normalized role profile dictionaries.
+    """
     profiles_source = raw_profiles if isinstance(raw_profiles, list) and raw_profiles else DEFAULT_ROLE_PROFILE_CONFIGS
     normalized_profiles = []
     seen_names = set()
@@ -877,10 +1045,31 @@ def normalize_role_profiles(raw_profiles: object) -> list[dict[str, object]]:
 
 
 def _clamp_int(value: object, min_val: int, max_val: int, default: int) -> int:
+    """
+    Safely convert to int and clamp within a specified range.
+
+    Args:
+        value: Input value.
+        min_val: Minimum allowed value.
+        max_val: Maximum allowed value.
+        default: Fallback if conversion fails.
+
+    Returns:
+        The clamped integer.
+    """
     return max(min_val, min(max_val, safe_int(value, default)))
 
 
 def load_job_search_config(config_file: str) -> dict[str, object]:
+    """
+    Load the central job search configuration, including thresholds and preferences.
+
+    Args:
+        config_file: Path to the config JSON file.
+
+    Returns:
+        A dictionary with all search parameters and pre-compiled patterns.
+    """
     raw_data: dict[str, object] = {}
     config_path = Path(config_file)
     if config_path.exists():
@@ -895,8 +1084,14 @@ def load_job_search_config(config_file: str) -> dict[str, object]:
     whitelist = normalize_company_control_values(raw_data.get("company_whitelist", []))
     blacklist = normalize_company_control_values(raw_data.get("company_blacklist", []))
     priority_companies = normalize_company_control_values(raw_data.get("priority_companies", []))
-    daily_digest = cast(dict[str, object], raw_data.get("daily_digest") if isinstance(raw_data.get("daily_digest"), dict) else {})
-    feedback = cast(dict[str, object], raw_data.get("feedback") if isinstance(raw_data.get("feedback"), dict) else {})
+    daily_digest = cast(
+        dict[str, object],
+        raw_data.get("daily_digest") if isinstance(raw_data.get("daily_digest"), dict) else {},
+    )
+    feedback = cast(
+        dict[str, object],
+        raw_data.get("feedback") if isinstance(raw_data.get("feedback"), dict) else {},
+    )
     digest_statuses = [
         status
         for status in normalize_string_list(
@@ -978,6 +1173,13 @@ def load_job_search_config(config_file: str) -> dict[str, object]:
 
 
 def atomic_write_json(path: Path, payload: object) -> None:
+    """
+    Write a JSON file atomically using a temporary file to prevent corruption.
+
+    Args:
+        path: Target file path.
+        payload: JSON-serializable object to write.
+    """
     temp_path = path.with_suffix(".tmp")
     with open(temp_path, "w", encoding="utf-8") as f:
         json.dump(payload, f, indent=2, ensure_ascii=False)
@@ -985,30 +1187,82 @@ def atomic_write_json(path: Path, payload: object) -> None:
 
 
 def load_feed_state(feed_state_file: str) -> dict[str, dict[str, float]]:
+    """
+    Load the feed check state (legacy wrapper for storage.load_feed_state).
+
+    Args:
+        feed_state_file: Unused in DB mode.
+
+    Returns:
+        Feed state dictionary.
+    """
     return storage.load_feed_state(STATE_DB_FILE)
 
 
 def save_feed_state(feed_state_file: str, feed_state: dict[str, dict[str, float]]) -> None:
+    """
+    Save the feed check state to DB and legacy JSON.
+
+    Args:
+        feed_state_file: Path to legacy JSON.
+        feed_state: State dictionary.
+    """
     storage.save_feed_state(STATE_DB_FILE, feed_state)
     atomic_write_json(Path(feed_state_file), feed_state)
 
 
 def is_feed_due(feed: Mapping[str, object], feed_state: dict[str, dict[str, float]], now_ts: float) -> bool:
+    """
+    Determine if a feed is due for a check based on its configured interval.
+
+    Args:
+        feed: Feed configuration.
+        feed_state: Current check state.
+        now_ts: Current unix timestamp.
+
+    Returns:
+        True if the interval since last check has expired.
+    """
     last_checked_at = feed_state.get(str(feed.get("name", "")), {}).get("last_checked_at", 0)
     return now_ts - last_checked_at >= int(str(feed.get("min_interval_seconds", 0)))
 
 
 def get_source_display_name(source: dict[str, object]) -> str:
+    """
+    Get the preferred display name for a source configuration.
+
+    Args:
+        source: Source configuration dictionary.
+
+    Returns:
+        The display name or internal name.
+    """
     return clean_text(str(source.get("display_name", "") or source.get("name", "")))
 
 
 def load_existing_jobs(csv_file: str) -> list[dict[str, str]]:
+    """
+    Load previously crawled jobs and export them to CSV.
+
+    Args:
+        csv_file: Path to export CSV.
+
+    Returns:
+        List of previously seen jobs.
+    """
     jobs = storage.load_jobs(STATE_DB_FILE)
     storage.export_jobs_to_csv(STATE_DB_FILE, csv_file)
     return jobs
 
 
 def append_rows(csv_file: str, rows: list[dict[str, str]]) -> None:
+    """
+    Append new jobs to the database and export the full set to CSV.
+
+    Args:
+        csv_file: Path to export CSV.
+        rows: New job records.
+    """
     if not rows:
         return
     storage.append_jobs(STATE_DB_FILE, rows)
@@ -1016,6 +1270,15 @@ def append_rows(csv_file: str, rows: list[dict[str, str]]) -> None:
 
 
 def load_seen_jobs_state(seen_jobs_state_file: str) -> dict[str, object]:
+    """
+    Load the seen jobs tracker state, enforcing size limits on reviewed fingerprints.
+
+    Args:
+        seen_jobs_state_file: Unused in DB mode.
+
+    Returns:
+        State dictionary.
+    """
     state = storage.load_seen_jobs_state(STATE_DB_FILE)
     state["reviewed_fingerprints"] = dedupe_preserving_order(
         [clean_text(str(fp)) for fp in cast(list[object], state["reviewed_fingerprints"]) if clean_text(str(fp))]
@@ -1024,11 +1287,27 @@ def load_seen_jobs_state(seen_jobs_state_file: str) -> dict[str, object]:
 
 
 def save_seen_jobs_state(seen_jobs_state_file: str, seen_jobs_state: dict[str, object]) -> None:
+    """
+    Save the seen jobs state to DB and legacy JSON.
+
+    Args:
+        seen_jobs_state_file: Path to legacy JSON.
+        seen_jobs_state: State dictionary.
+    """
     storage.save_seen_jobs_state(STATE_DB_FILE, seen_jobs_state)
     atomic_write_json(Path(seen_jobs_state_file), seen_jobs_state)
 
 
 def normalize_pending_alert(payload: dict[str, object]) -> dict[str, object] | None:
+    """
+    Validate and normalize a pending alert payload.
+
+    Args:
+        payload: Raw alert dictionary.
+
+    Returns:
+        Normalized alert dictionary or None if invalid.
+    """
     link = clean_text(str(payload.get("link", "")))
     title = clean_text(str(payload.get("title", "")))
     if not link or not title:
@@ -1054,6 +1333,15 @@ def normalize_pending_alert(payload: dict[str, object]) -> dict[str, object] | N
 
 
 def load_alert_state(alerts_state_file: str) -> dict[str, object]:
+    """
+    Load and normalize the alert state, enforcing history limits.
+
+    Args:
+        alerts_state_file: Unused in DB mode.
+
+    Returns:
+        State dictionary.
+    """
     state = storage.load_alert_state(STATE_DB_FILE)
     pending_alerts = []
     seen_pending_links = set()
@@ -1066,7 +1354,11 @@ def load_alert_state(alerts_state_file: str) -> dict[str, object]:
         pending_alerts.append(normalized)
         seen_pending_links.add(normalized["link"])
 
-    alerted_links = [clean_text(str(link)) for link in cast(list[object], state.get("alerted_links", [])) if clean_text(str(link))]
+    alerted_links = [
+        clean_text(str(link))
+        for link in cast(list[object], state.get("alerted_links", []))
+        if clean_text(str(link))
+    ]
 
     return {
         "alerted_links": dedupe_preserving_order(alerted_links)[-MAX_ALERTED_LINKS:],
@@ -1078,11 +1370,26 @@ def load_alert_state(alerts_state_file: str) -> dict[str, object]:
 
 
 def save_alert_state(alerts_state_file: str, alert_state: dict[str, object]) -> None:
+    """
+    Save the alert state to DB and legacy JSON.
+
+    Args:
+        alerts_state_file: Path to legacy JSON.
+        alert_state: State dictionary.
+    """
     storage.save_alert_state(STATE_DB_FILE, alert_state)
     atomic_write_json(Path(alerts_state_file), alert_state)
 
 
 def save_matches_snapshot(matches_file: str, run_time_utc: str, matches: list[dict[str, object]]) -> None:
+    """
+    Save a snapshot of new matches to a JSON file.
+
+    Args:
+        matches_file: Output path.
+        run_time_utc: Current runtime.
+        matches: List of match dictionaries.
+    """
     snapshot = {
         "generated_at": run_time_utc,
         "match_count": len(matches),
@@ -1092,20 +1399,57 @@ def save_matches_snapshot(matches_file: str, run_time_utc: str, matches: list[di
 
 
 def normalize_company_control(value: object) -> str:
+    """
+    Validate and normalize a company control status label.
+
+    Args:
+        value: Candidate label.
+
+    Returns:
+        Valid label ('none', 'whitelist', 'priority').
+    """
     normalized = normalize_text(str(value))
     return normalized if normalized in COMPANY_CONTROL_ORDER else "none"
 
 
 def stronger_company_control(left: str, right: str) -> str:
+    """
+    Return the stronger of two company control statuses.
+
+    Args:
+        left: First label.
+        right: Second label.
+
+    Returns:
+        The label with higher priority.
+    """
     return left if COMPANY_CONTROL_ORDER.get(left, 0) >= COMPANY_CONTROL_ORDER.get(right, 0) else right
 
 
 def normalize_application_status(value: object) -> str:
+    """
+    Validate and normalize an application status label.
+
+    Args:
+        value: Candidate status.
+
+    Returns:
+        Valid status string.
+    """
     normalized = normalize_text(str(value))
     return normalized if normalized in APPLICATION_STATUSES else "new"
 
 
 def ensure_sentence(text: object) -> str:
+    """
+    Ensure a piece of text ends with a sentence-finishing punctuation mark.
+
+    Args:
+        text: Input text.
+
+    Returns:
+        Text with a trailing period if needed.
+    """
     cleaned = clean_text(str(text)).strip()
     if not cleaned:
         return ""
@@ -1113,6 +1457,16 @@ def ensure_sentence(text: object) -> str:
 
 
 def truncate_text(text: object, limit: int = 180) -> str:
+    """
+    Truncate text to a maximum length, preserving whole words and adding ellipsis.
+
+    Args:
+        text: Input text.
+        limit: Max character length.
+
+    Returns:
+        Truncated string.
+    """
     cleaned = clean_text(str(text))
     if len(cleaned) <= limit:
         return cleaned
@@ -1121,6 +1475,15 @@ def truncate_text(text: object, limit: int = 180) -> str:
 
 
 def build_focus_phrases(*sources: object) -> list[str]:
+    """
+    Combine multiple input sources (strings, lists) into a unique list of normalized phrases.
+
+    Args:
+        *sources: Input data fragments.
+
+    Returns:
+        Unique list of normalized strings.
+    """
     phrases = []
     for source in sources:
         values = source if isinstance(source, list) else [source] if source else []
@@ -1132,6 +1495,15 @@ def build_focus_phrases(*sources: object) -> list[str]:
 
 
 def parse_iso_utc(value: object) -> datetime | None:
+    """
+    Parse an ISO-formatted date string into a UTC datetime object.
+
+    Args:
+        value: ISO date string.
+
+    Returns:
+        UTC datetime object or None if parsing fails.
+    """
     cleaned = clean_text(str(value))
     if not cleaned:
         return None
@@ -1145,6 +1517,15 @@ def parse_iso_utc(value: object) -> datetime | None:
 
 
 def latest_application_timestamp(application: Mapping[str, object]) -> datetime | None:
+    """
+    Determine the most recent significant timestamp for an application.
+
+    Args:
+        application: Application record dictionary.
+
+    Returns:
+        The latest datetime found across all potential timestamp fields.
+    """
     timestamps = [
         parse_iso_utc(application.get("rejected_at_utc", "")),
         parse_iso_utc(application.get("interviewed_at_utc", "")),

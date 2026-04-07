@@ -55,6 +55,15 @@ from jobbot.models import JobLead
 
 
 def normalize_application_record(payload: Mapping[str, object]) -> dict[str, object] | None:
+    """
+    Normalize a raw application payload into a structured dictionary.
+
+    Args:
+        payload: The raw dictionary containing application data.
+
+    Returns:
+        A normalized dictionary or None if critical fields are missing.
+    """
     title = clean_text(str(payload.get("title", "")))
     link = clean_text(str(payload.get("link", "")))
     description = clean_text(str(payload.get("description", "")))[:1500]
@@ -151,6 +160,15 @@ def normalize_application_record(payload: Mapping[str, object]) -> dict[str, obj
 
 
 def load_applications_state(applications_file: str) -> dict[str, object]:
+    """
+    Load the applications state from the database, normalizing and deduping records.
+
+    Args:
+        applications_file: Path to the applications JSON file (legacy, mainly uses DB).
+
+    Returns:
+        A dictionary representing the loaded applications state.
+    """
     data = storage.load_applications_state(STATE_DB_FILE)
     applications = []
     seen_keys = set()
@@ -179,6 +197,13 @@ def load_applications_state(applications_file: str) -> dict[str, object]:
 
 
 def save_applications_state(applications_file: str, applications_state: dict[str, object]) -> None:
+    """
+    Save the applications state to both the SQLite database and the legacy JSON file.
+
+    Args:
+        applications_file: Path to the legacy applications JSON file.
+        applications_state: The state dictionary to save.
+    """
     storage.save_applications_state(STATE_DB_FILE, applications_state)
     atomic_write_json(Path(applications_file), applications_state)
 
@@ -189,6 +214,18 @@ def evaluate_location_fit(
     prefs: dict,
     lockouts: list[str],
 ) -> tuple[bool, str]:
+    """
+    Evaluate if a job's location fits the user's preferences.
+
+    Args:
+        normalized_full_text: The full text of the job posting, normalized.
+        preferred_locations: List of preferred geographic locations.
+        prefs: Dictionary containing user preferences (remote, hybrid, onsite, relocation).
+        lockouts: List of geographic terms that should trigger a rejection.
+
+    Returns:
+        A tuple of (is_fit, reason_string).
+    """
     location_context = normalized_full_text[:1000]
     is_remote = any(re.search(rf"\b{word}\b", location_context) for word in ["remote", "anywhere", "wfh"])
     is_hybrid = "hybrid" in location_context
@@ -221,6 +258,15 @@ def evaluate_location_fit(
 
 
 def normalize_currency_token(token: str) -> str:
+    """
+    Normalize a currency symbol or string to a standardized ISO-like code.
+
+    Args:
+        token: The raw currency token (e.g., "$", "€", "GBP").
+
+    Returns:
+        A standardized currency code ("gbp", "usd", "eur") or an empty string.
+    """
     normalized = token.strip().lower()
     if normalized in {"£", "gbp", "pound", "pounds"}:
         return "gbp"
@@ -232,6 +278,15 @@ def normalize_currency_token(token: str) -> str:
 
 
 def detect_salary_cadence(context: str) -> str:
+    """
+    Detect the salary payment frequency (hour, day, month, year) from context.
+
+    Args:
+        context: The text context around the salary mention.
+
+    Returns:
+        The detected cadence ("hour", "day", "month", "year").
+    """
     normalized = normalize_text(context)
     if re.search(r"\b(per|a)\s+hour\b|/hour\b|\bhourly\b", normalized):
         return "hour"
@@ -243,6 +298,16 @@ def detect_salary_cadence(context: str) -> str:
 
 
 def parse_salary_amount(raw_amount: str, has_k_suffix: str | None) -> float:
+    """
+    Parse a raw salary string into a float, accounting for 'k' suffixes.
+
+    Args:
+        raw_amount: The numeric part of the salary as a string.
+        has_k_suffix: Truthy if a 'k' or 'K' suffix was present.
+
+    Returns:
+        The numeric salary value as a float.
+    """
     amount = float(raw_amount.replace(",", ""))
     if has_k_suffix:
         amount *= 1000
@@ -250,6 +315,17 @@ def parse_salary_amount(raw_amount: str, has_k_suffix: str | None) -> float:
 
 
 def annualize_salary_to_gbp(amount: float, currency: str, cadence: str) -> int:
+    """
+    Convert a salary amount to an annualized GBP value.
+
+    Args:
+        amount: The raw salary amount.
+        currency: The standardized currency code.
+        cadence: The payment frequency ("hour", "day", "month", "year").
+
+    Returns:
+        The estimated annualized salary in GBP.
+    """
     rate = CURRENCY_TO_GBP[currency]
     multiplier = CADENCE_TO_ANNUAL_MULTIPLIER[cadence]
     return round(amount * rate * multiplier)
@@ -261,6 +337,18 @@ def build_salary_info(
     currency: str,
     cadence: str,
 ) -> dict[str, object]:
+    """
+    Construct a standardized salary info dictionary.
+
+    Args:
+        minimum_amount: The minimum salary amount.
+        maximum_amount: The maximum salary amount.
+        currency: The standardized currency code.
+        cadence: The payment frequency.
+
+    Returns:
+        A dictionary with min/max GBP values and original currency/cadence.
+    """
     low = annualize_salary_to_gbp(minimum_amount, currency, cadence)
     high = annualize_salary_to_gbp(maximum_amount, currency, cadence)
     return {
@@ -272,6 +360,15 @@ def build_salary_info(
 
 
 def extract_salary_range_gbp(text: str) -> dict[str, object] | None:
+    """
+    Extract salary range information from text and convert to GBP.
+
+    Args:
+        text: The text to scan for salary information.
+
+    Returns:
+        A salary info dictionary or None if no valid salary is found.
+    """
     normalized = clean_text(text).lower().replace(",", "")
     range_patterns = [
         re.compile(
@@ -334,6 +431,15 @@ def extract_salary_range_gbp(text: str) -> dict[str, object] | None:
 
 
 def format_salary_info_for_reason(salary_info: dict[str, object]) -> str:
+    """
+    Format salary information into a human-readable string for scoring reasons.
+
+    Args:
+        salary_info: The standardized salary info dictionary.
+
+    Returns:
+        A formatted string describing the salary estimate.
+    """
     base = f"estimated GBP {salary_info['min_gbp']:,}-{salary_info['max_gbp']:,}"
     suffix = []
     if salary_info["currency"] != "gbp":
@@ -346,6 +452,18 @@ def format_salary_info_for_reason(salary_info: dict[str, object]) -> str:
 
 
 def apply_weight_map(text: str, weights: dict[str, int], reasons: list[str], prefix: str) -> int:
+    """
+    Apply a mapping of phrases to weights and update reasons.
+
+    Args:
+        text: The text to search for phrases.
+        weights: A dictionary mapping phrases to their score weights.
+        reasons: A list to append matching reasons to.
+        prefix: A string prefix for the reason (e.g., "title boost").
+
+    Returns:
+        The total score delta from all matched phrases.
+    """
     matched_phrases = [phrase for phrase in weights if contains_phrase(text, phrase)]
     if not matched_phrases:
         return 0
@@ -354,11 +472,23 @@ def apply_weight_map(text: str, weights: dict[str, int], reasons: list[str], pre
 
 
 def evaluate_company_preferences(company_name: str, search_config: dict[str, object]) -> dict[str, object]:
+    """
+    Evaluate if a company is blacklisted, whitelisted, or on the priority shortlist.
+
+    Args:
+        company_name: The name of the company.
+        search_config: The configuration containing company control lists.
+
+    Returns:
+        A dictionary describing the qualification status and score delta.
+    """
     normalized_company = normalize_company_name(company_name)
     if not normalized_company:
         return {"qualified": True, "score_delta": 0, "reason": "", "control": "none", "shortlisted": False}
     _PatternList = list[tuple[str, re.Pattern[str]]]
-    blacklist_match = find_pattern_matches(normalized_company, cast(_PatternList, search_config["company_blacklist_entries"]), limit=1)
+    blacklist_match = find_pattern_matches(
+        normalized_company, cast(_PatternList, search_config["company_blacklist_entries"]), limit=1
+    )
     if blacklist_match:
         return {
             "qualified": False,
@@ -367,7 +497,9 @@ def evaluate_company_preferences(company_name: str, search_config: dict[str, obj
             "control": "blacklist",
             "shortlisted": False,
         }
-    priority_match = find_pattern_matches(normalized_company, cast(_PatternList, search_config["priority_company_entries"]), limit=1)
+    priority_match = find_pattern_matches(
+        normalized_company, cast(_PatternList, search_config["priority_company_entries"]), limit=1
+    )
     if priority_match:
         return {
             "qualified": True,
@@ -376,7 +508,9 @@ def evaluate_company_preferences(company_name: str, search_config: dict[str, obj
             "control": "priority",
             "shortlisted": True,
         }
-    whitelist_match = find_pattern_matches(normalized_company, cast(_PatternList, search_config["company_whitelist_entries"]), limit=1)
+    whitelist_match = find_pattern_matches(
+        normalized_company, cast(_PatternList, search_config["company_whitelist_entries"]), limit=1
+    )
     if whitelist_match:
         return {
             "qualified": True,
@@ -393,6 +527,17 @@ def evaluate_role_profile(
     normalized_desc: str,
     search_config: dict[str, object],
 ) -> dict[str, object] | None:
+    """
+    Identify the best-fitting role profile for a job based on target patterns.
+
+    Args:
+        normalized_title: The normalized job title.
+        normalized_desc: The normalized job description.
+        search_config: The configuration containing role profiles.
+
+    Returns:
+        The best matching role profile info or None.
+    """
     best_match = None
     best_sort_key = None
     for profile in cast(list[dict[str, Any]], search_config["role_profiles"]):
@@ -423,6 +568,17 @@ def evaluate_role_profile(
 def select_resume_evidence(
     profile: dict[str, object], focus_phrases: list[str], limit: int = 3
 ) -> list[dict[str, Any]]:
+    """
+    Select the most relevant experience entries from a profile for a given role.
+
+    Args:
+        profile: The user's candidate profile.
+        focus_phrases: List of target phrases (skills/topics) to prioritize.
+        limit: Maximum number of entries to return.
+
+    Returns:
+        A list of relevant experience entry dictionaries.
+    """
     experience_entries = list(cast(list[Any], profile.get("experience_entries", [])))
     if not experience_entries:
         return []
@@ -468,6 +624,20 @@ def build_why_this_fits_notes(
     skill_focus_phrases: list[str],
     evidence_entries: list[dict[str, object]],
 ) -> list[str]:
+    """
+    Generate short "why this fits" notes based on matches and evidence.
+
+    Args:
+        company_name: The company name.
+        company_preferences: Results of company preference evaluation.
+        role_profile_match: Results of role profile evaluation.
+        title_alignment_matches: List of target titles that matched.
+        skill_focus_phrases: List of target skills that matched.
+        evidence_entries: Relevant experience entries found in the profile.
+
+    Returns:
+        A list of up to 3 sentence-formatted fit notes.
+    """
     notes = []
     if company_preferences["control"] == "priority" and company_name:
         notes.append(
@@ -505,6 +675,15 @@ def build_why_this_fits_notes(
 
 
 def build_resume_bullet_suggestions(evidence_entries: list[dict[str, object]]) -> list[str]:
+    """
+    Create bullet point suggestions for a resume based on selected evidence.
+
+    Args:
+        evidence_entries: List of selected relevant experience entries.
+
+    Returns:
+        A list of suggested resume bullet points.
+    """
     suggestions = []
     for entry in evidence_entries:
         bullet = ensure_sentence(truncate_text(entry.get("text", ""), 220))
@@ -520,6 +699,19 @@ def build_intro_message(
     skill_focus_phrases: list[str],
     evidence_entries: list[dict[str, object]],
 ) -> str:
+    """
+    Draft a personalized intro message or cover letter snippet.
+
+    Args:
+        profile: The user's candidate profile.
+        role_title: The title of the job.
+        company_name: The company name.
+        skill_focus_phrases: List of matched skills.
+        evidence_entries: List of relevant experience entries.
+
+    Returns:
+        A formatted intro message string.
+    """
     candidate_name = clean_text(str(profile.get("candidate_name", "")))
     candidate_title = clean_text(str(profile.get("candidate_title", ""))) or "IT support professional"
     greeting = f"Hi {company_name} team," if company_name else "Hi hiring team,"
@@ -558,6 +750,22 @@ def build_application_materials(
     title_alignment_matches: list[str],
     skill_focus_phrases: list[str],
 ) -> dict[str, object]:
+    """
+    Assemble all derived application-ready materials (notes, bullets, message).
+
+    Args:
+        profile: The user's candidate profile.
+        role_title: Job title.
+        company_name: Company name.
+        score: The calculated job score.
+        company_preferences: Results of company preference evaluation.
+        role_profile_match: Results of role profile evaluation.
+        title_alignment_matches: Matched target titles.
+        skill_focus_phrases: Matched target skills.
+
+    Returns:
+        A dictionary containing all generated application materials.
+    """
     evidence_entries = select_resume_evidence(
         profile, build_focus_phrases(title_alignment_matches, skill_focus_phrases), limit=3
     )
@@ -584,6 +792,19 @@ def apply_feedback_adjustments(
     feedback_keywords: list[str],
     feedback_profile: dict[str, object],
 ) -> int:
+    """
+    Adjust the job score based on the adaptive feedback model.
+
+    Args:
+        score: The current base score.
+        reasons: List to append feedback-related reasons to.
+        source_label: The source of the job.
+        feedback_keywords: Keywords extracted for feedback comparison.
+        feedback_profile: The current feedback model.
+
+    Returns:
+        The adjusted score.
+    """
     if not feedback_profile.get("enabled", False):
         return score
     score_delta = 0
@@ -892,6 +1113,16 @@ def score_job(
 
 
 def queue_pending_alerts(alert_state: dict[str, object], matches: list[dict[str, object]]) -> int:
+    """
+    Identify new matches that haven't been alerted yet and add them to the pending queue.
+
+    Args:
+        alert_state: The current state of alerts.
+        matches: List of new candidate matches from the current run.
+
+    Returns:
+        The number of new alerts queued.
+    """
     pending_alerts = cast(list[dict[str, Any]], alert_state["pending_alerts"])
     pending_links = {str(alert["link"]) for alert in pending_alerts}
     alerted_links = {str(link) for link in cast(list[object], alert_state["alerted_links"])}
@@ -920,6 +1151,12 @@ def queue_pending_alerts(alert_state: dict[str, object], matches: list[dict[str,
 
 
 def load_telegram_settings() -> tuple[str, str, str]:
+    """
+    Load Telegram bot configuration from environment variables.
+
+    Returns:
+        A tuple of (bot_token, chat_id, thread_id).
+    """
     token = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
     chat_id = os.environ.get("TELEGRAM_CHAT_ID", "").strip()
     thread_id = os.environ.get("TELEGRAM_THREAD_ID", "").strip()
@@ -927,6 +1164,15 @@ def load_telegram_settings() -> tuple[str, str, str]:
 
 
 def _telegram_payload_value(value: object) -> str:
+    """
+    Normalize a value for a Telegram API request payload.
+
+    Args:
+        value: The value to normalize.
+
+    Returns:
+        A string representation of the value.
+    """
     if isinstance(value, (dict, list)):
         return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
     if isinstance(value, bool):
@@ -940,6 +1186,18 @@ def telegram_api_request(
     payload: dict[str, object] | None = None,
     request_timeout_seconds: float | None = None,
 ) -> tuple[bool, object, str]:
+    """
+    Execute a request to the Telegram Bot API.
+
+    Args:
+        method: The API method name (e.g., "sendMessage").
+        token: The bot token.
+        payload: Optional dictionary of parameters.
+        request_timeout_seconds: Optional timeout override.
+
+    Returns:
+        A tuple of (success_boolean, result_object, error_message).
+    """
     request_payload = {
         key: _telegram_payload_value(value)
         for key, value in (payload or {}).items()
@@ -971,6 +1229,15 @@ def telegram_api_request(
 
 
 def format_alert_message(alert: dict[str, object]) -> str:
+    """
+    Format a job match alert into a human-readable Telegram message.
+
+    Args:
+        alert: The alert dictionary.
+
+    Returns:
+        A formatted string ready for transmission.
+    """
     lines = [f"Job Match ({alert['score']}): {alert['title']}"]
     if alert.get("company"):
         lines.append(f"Company: {alert['company']}")
@@ -996,6 +1263,19 @@ def send_telegram_message_with_markup(
     thread_id: str,
     reply_markup: dict[str, object] | None = None,
 ) -> tuple[bool, dict[str, object] | None, str]:
+    """
+    Send a Telegram message with optional interactive markup.
+
+    Args:
+        message: The message text.
+        token: Bot token.
+        chat_id: Target chat ID.
+        thread_id: Target thread/topic ID.
+        reply_markup: Optional inline keyboard or other markup.
+
+    Returns:
+        A tuple of (success, message_result, error).
+    """
     payload: dict[str, object] = {
         "chat_id": chat_id,
         "text": message,
@@ -1010,6 +1290,18 @@ def send_telegram_message_with_markup(
 
 
 def send_telegram_message(message: str, token: str, chat_id: str, thread_id: str) -> tuple[bool, str]:
+    """
+    Send a simple text message to Telegram.
+
+    Args:
+        message: The message text.
+        token: Bot token.
+        chat_id: Target chat ID.
+        thread_id: Target thread/topic ID.
+
+    Returns:
+        A tuple of (success, error_message).
+    """
     ok, _, error = send_telegram_message_with_markup(message, token, chat_id, thread_id)
     return ok, error
 
@@ -1021,6 +1313,19 @@ def edit_telegram_message(
     message_id: int,
     reply_markup: dict[str, object] | None = None,
 ) -> tuple[bool, str]:
+    """
+    Edit an existing Telegram message.
+
+    Args:
+        message: The new message text.
+        token: Bot token.
+        chat_id: Chat ID.
+        message_id: ID of the message to edit.
+        reply_markup: Optional new inline keyboard.
+
+    Returns:
+        A tuple of (success, error_message).
+    """
     payload: dict[str, object] = {
         "chat_id": chat_id,
         "message_id": message_id,
@@ -1039,6 +1344,18 @@ def answer_telegram_callback_query(
     text: str = "",
     show_alert: bool = False,
 ) -> tuple[bool, str]:
+    """
+    Acknowledge a callback query from an inline keyboard.
+
+    Args:
+        callback_query_id: The ID of the callback query.
+        token: Bot token.
+        text: Optional notification text to show to the user.
+        show_alert: Whether to show an alert dialog instead of a notification.
+
+    Returns:
+        A tuple of (success, error_message).
+    """
     payload: dict[str, object] = {"callback_query_id": callback_query_id}
     if text:
         payload["text"] = text[:200]
@@ -1054,6 +1371,19 @@ def fetch_telegram_updates(
     limit: int = 20,
     timeout: int = 0,
 ) -> tuple[bool, list[dict[str, object]], str]:
+    """
+    Fetch updates (messages, callbacks) from the Telegram Bot API.
+
+    Args:
+        token: Bot token.
+        offset: ID of the first update to be returned.
+        allowed_updates: List of update types to receive.
+        limit: Max number of updates to fetch.
+        timeout: Timeout in seconds for long polling.
+
+    Returns:
+        A tuple of (success, updates_list, error_message).
+    """
     payload: dict[str, object] = {
         "offset": offset,
         "limit": max(1, min(100, limit)),
@@ -1076,6 +1406,16 @@ def fetch_telegram_updates(
 
 
 def deliver_pending_alerts(alert_state: dict[str, object], current_run_ts: str) -> tuple[int, str]:
+    """
+    Send all pending alerts via Telegram.
+
+    Args:
+        alert_state: The current state of alerts.
+        current_run_ts: The current run timestamp.
+
+    Returns:
+        A tuple of (number_of_alerts_sent, last_error_message).
+    """
     pending_alerts = list(cast(list[dict[str, Any]], alert_state["pending_alerts"]))
     if not pending_alerts:
         alert_state["last_delivery_error"] = ""
@@ -1109,6 +1449,13 @@ def deliver_pending_alerts(alert_state: dict[str, object], current_run_ts: str) 
 
 
 def sync_application_outcomes(applications_state: dict[str, object], observed_at_utc: str) -> None:
+    """
+    Synchronize timestamps for application outcome changes.
+
+    Args:
+        applications_state: The current applications state.
+        observed_at_utc: The timestamp to use for newly observed status changes.
+    """
     for application in cast(list[dict[str, Any]], applications_state["applications"]):
         status = normalize_application_status(application.get("status", "new"))
         application["status"] = status
@@ -1134,6 +1481,17 @@ def prune_applications_state(
     search_config: dict[str, object],
     current_run_ts: str,
 ) -> dict[str, object]:
+    """
+    Prune old application records based on their status and retention settings.
+
+    Args:
+        applications_state: The current applications state.
+        search_config: Config containing retention policies.
+        current_run_ts: Current timestamp.
+
+    Returns:
+        A summary dictionary of pruned items.
+    """
     current_dt = parse_iso_utc(current_run_ts) or datetime.now(timezone.utc)
     feedback_settings = cast(dict[str, Any], search_config["feedback"])
     applications = cast(list[dict[str, Any]], applications_state["applications"])
@@ -1179,10 +1537,23 @@ def prune_applications_state(
 
 
 def fresh_feedback_counts() -> dict[str, int]:
+    """
+    Initialize a fresh feedback counter dictionary.
+
+    Returns:
+        A dictionary with zeroed counts for outcomes.
+    """
     return {"total": 0, "applied": 0, "interview": 0, "rejected": 0}
 
 
 def increment_feedback_counts(counter: dict[str, int], status: str) -> None:
+    """
+    Increment outcome counts in a feedback counter.
+
+    Args:
+        counter: The counter dictionary to update.
+        status: The observed application status.
+    """
     if status not in OUTCOME_RELEVANT_STATUSES:
         return
     counter["total"] += 1
@@ -1190,6 +1561,17 @@ def increment_feedback_counts(counter: dict[str, int], status: str) -> None:
 
 
 def compute_feedback_adjustment(counts: dict[str, int], max_adjustment: int, min_samples: int) -> int:
+    """
+    Calculate a score adjustment boost or penalty based on outcome history.
+
+    Args:
+        counts: Outcome counts for a specific source/keyword.
+        max_adjustment: Maximum allowed boost or penalty.
+        min_samples: Minimum number of samples required for adjustment.
+
+    Returns:
+        The calculated score adjustment.
+    """
     total = int(counts.get("total", 0))
     if total < min_samples:
         return 0
@@ -1206,6 +1588,18 @@ def build_feedback_metrics(
     search_config: dict[str, object],
     cleanup_summary: dict[str, object],
 ) -> dict[str, object]:
+    """
+    Analyze application outcomes and build an adaptive feedback model.
+
+    Args:
+        current_run_ts: Current timestamp.
+        applications_state: The current applications state.
+        search_config: Configuration containing feedback settings.
+        cleanup_summary: Result of the pruning/cleanup pass.
+
+    Returns:
+        A feedback model dictionary with source and keyword adjustments.
+    """
     feedback_settings = cast(dict[str, Any], search_config["feedback"])
     status_counts = dict.fromkeys(sorted(APPLICATION_STATUSES), 0)
     outcome_sample_count = 0
@@ -1310,6 +1704,13 @@ def build_feedback_metrics(
 
 
 def save_feedback_metrics_snapshot(feedback_metrics_file: str, snapshot: dict[str, object]) -> None:
+    """
+    Save the feedback metrics snapshot to a JSON file.
+
+    Args:
+        feedback_metrics_file: Path to the output file.
+        snapshot: The feedback metrics snapshot to save.
+    """
     atomic_write_json(Path(feedback_metrics_file), snapshot)
 
 
@@ -1318,6 +1719,14 @@ def _merge_application_record(
     application: dict[str, Any],
     seen_at_utc: str,
 ) -> None:
+    """
+    Merge a new job match into an existing application record.
+
+    Args:
+        existing: The existing record to update.
+        application: The new job match data.
+        seen_at_utc: The timestamp when this match was observed.
+    """
     existing["title"] = application["title"] or existing["title"]
     if application["description"] and len(application["description"]) >= len(str(existing.get("description", ""))):
         existing["description"] = application["description"]
@@ -1379,6 +1788,17 @@ def find_application_record(
     fingerprints: list[str],
     link: str,
 ) -> dict[str, object] | None:
+    """
+    Search for an existing application record by link or content fingerprints.
+
+    Args:
+        applications: list of application records to search.
+        fingerprints: Content fingerprints of the job posting.
+        link: Direct URL to the job posting.
+
+    Returns:
+        The matching record or None.
+    """
     fingerprint_set = set(fingerprints)
     for application in applications:
         existing_links = {str(item) for item in cast(list[object], application.get("links", []))}
@@ -1395,6 +1815,17 @@ def upsert_application_record(
     payload: dict[str, object],
     seen_at_utc: str,
 ) -> bool:
+    """
+    Insert or update an application record in the memory state.
+
+    Args:
+        applications_state: The current applications state.
+        payload: New match data.
+        seen_at_utc: Timestamp when seen.
+
+    Returns:
+        True if a new record was created, False if an existing one was updated.
+    """
     application = normalize_application_record(
         {
             **payload,
@@ -1417,6 +1848,16 @@ def upsert_application_record(
 
 
 def upsert_application_record_in_storage(payload: dict[str, object], seen_at_utc: str) -> bool:
+    """
+    Insert or update an application record directly in the SQLite database.
+
+    Args:
+        payload: New match data.
+        seen_at_utc: Timestamp when seen.
+
+    Returns:
+        True if a new record was created, False if an existing one was updated.
+    """
     application = normalize_application_record(
         {
             **payload,
@@ -1450,6 +1891,16 @@ def seed_applications_from_existing_jobs(
     applications_state: dict[str, object],
     existing_jobs: list[dict[str, str]],
 ) -> int:
+    """
+    Seed application records from a list of previously seen jobs.
+
+    Args:
+        applications_state: The current applications state.
+        existing_jobs: List of previously seen jobs.
+
+    Returns:
+        Number of seeded applications.
+    """
     if applications_state["applications"] or not existing_jobs:
         return 0
     created = 0
@@ -1473,6 +1924,16 @@ def seed_applications_from_existing_jobs(
 
 
 def rank_application_for_digest(application: dict[str, object], current_dt: datetime) -> tuple[int, float]:
+    """
+    Calculate a ranking score and age for an application to be included in a digest.
+
+    Args:
+        application: The application record.
+        current_dt: Reference current timestamp.
+
+    Returns:
+        A tuple of (rank_score, age_in_hours).
+    """
     last_seen_dt = parse_iso_utc(application.get("last_seen_utc", "")) or parse_iso_utc(
         application.get("first_seen_utc", "")
     )
@@ -1501,6 +1962,17 @@ def build_daily_digest_snapshot(
     applications_state: dict[str, object],
     search_config: dict[str, object],
 ) -> dict[str, object]:
+    """
+    Create a snapshot of the top matches for the daily digest.
+
+    Args:
+        current_run_ts: Current timestamp.
+        applications_state: The current applications state.
+        search_config: Config containing digest settings.
+
+    Returns:
+        A dictionary representing the daily digest snapshot.
+    """
     current_dt = parse_iso_utc(current_run_ts) or datetime.now(timezone.utc)
     digest_settings = cast(dict[str, Any], search_config["daily_digest"])
     items = []
@@ -1549,10 +2021,27 @@ def build_daily_digest_snapshot(
 
 
 def save_daily_digest_snapshot(daily_digest_file: str, snapshot: dict[str, object]) -> None:
+    """
+    Save the daily digest snapshot to a JSON file.
+
+    Args:
+        daily_digest_file: Path to the output file.
+        snapshot: The digest snapshot to save.
+    """
     atomic_write_json(Path(daily_digest_file), snapshot)
 
 
 def _format_daily_digest_item(item: dict[str, object], index: int) -> str:
+    """
+    Format a single job item for the daily digest message.
+
+    Args:
+        item: The digest item from the snapshot.
+        index: The display index of the item.
+
+    Returns:
+        A formatted string description of the item.
+    """
     badges = [f"score {item['score']}", str(item["status"])]
     if item["shortlisted"]:
         badges.insert(0, "shortlist")
@@ -1574,6 +2063,17 @@ def format_daily_digest_messages(
     page_size: int,
     max_chars: int = 3500,
 ) -> list[str]:
+    """
+    Format a daily digest snapshot into a series of paginated Telegram messages.
+
+    Args:
+        snapshot: The daily digest snapshot.
+        page_size: Preferred number of items per message.
+        max_chars: Maximum character limit for a single message.
+
+    Returns:
+        A list of formatted message strings.
+    """
     items = list(cast(list[Any], snapshot.get("items", [])))
     if not items:
         return [f"Daily Job Digest: {snapshot['digest_date_utc']}\nNo items."]
@@ -1616,6 +2116,15 @@ def format_daily_digest_messages(
 
 
 def format_daily_digest_message(snapshot: dict[str, object]) -> str:
+    """
+    Format the entire daily digest into a single message (legacy wrapper).
+
+    Args:
+        snapshot: The digest snapshot.
+
+    Returns:
+        The formatted message string.
+    """
     return format_daily_digest_messages(snapshot, page_size=max(1, len(cast(list[Any], snapshot.get("items", [])))))[0]
 
 
@@ -1624,10 +2133,29 @@ _NOOP_PAGE_TOKEN = "noop"
 
 
 def _build_digest_callback_data(session_id: str, page_token: int | str) -> str:
+    """
+    Construct standardized callback data for digest pagination buttons.
+
+    Args:
+        session_id: The ID of the digest session.
+        page_token: The page index or a special token like 'noop'.
+
+    Returns:
+        A formatted callback data string.
+    """
     return f"{_DIGEST_CALLBACK_PREFIX}{session_id}:{page_token}"
 
 
 def parse_digest_callback_data(value: object) -> tuple[str | None, str | None]:
+    """
+    Parse a Telegram callback data string from a digest button.
+
+    Args:
+        value: The raw callback data.
+
+    Returns:
+        A tuple of (session_id, page_token) or (None, None) if invalid.
+    """
     data = clean_text(str(value))
     if not data.startswith(_DIGEST_CALLBACK_PREFIX):
         return None, None
@@ -1642,6 +2170,17 @@ def parse_digest_callback_data(value: object) -> tuple[str | None, str | None]:
 
 
 def build_daily_digest_keyboard(session_id: str, page_index: int, total_pages: int) -> dict[str, object] | None:
+    """
+    Build an inline pagination keyboard for a daily digest message.
+
+    Args:
+        session_id: The digest session ID.
+        page_index: The current page index (0-based).
+        total_pages: Total number of pages.
+
+    Returns:
+        An inline keyboard dictionary or None if only one page exists.
+    """
     if total_pages <= 1:
         return None
     previous_target: int | str = page_index - 1 if page_index > 0 else _NOOP_PAGE_TOKEN
@@ -1661,11 +2200,30 @@ def build_daily_digest_keyboard(session_id: str, page_index: int, total_pages: i
 
 
 def _ack_callback(callback_query_id: str, token: str, text: str = "", show_alert: bool = False) -> None:
+    """
+    Internal helper to acknowledge a callback query.
+
+    Args:
+        callback_query_id: Callback query ID.
+        token: Bot token.
+        text: Notification text.
+        show_alert: Whether to show as alert.
+    """
     if callback_query_id:
         answer_telegram_callback_query(callback_query_id, token, text, show_alert)
 
 
 def process_telegram_callback_updates(timeout: int = 0, limit: int = 20) -> tuple[int, str]:
+    """
+    Poll for Telegram updates and handle digest pagination callbacks.
+
+    Args:
+        timeout: Timeout for long polling.
+        limit: Max updates to fetch.
+
+    Returns:
+        A tuple of (number_of_callbacks_handled, last_error_message).
+    """
     token, _, _ = load_telegram_settings()
     if not token:
         return 0, ""
@@ -1754,6 +2312,18 @@ def maybe_send_daily_digest(
     current_run_ts: str,
     search_config: dict[str, object],
 ) -> tuple[bool, str]:
+    """
+    Determine if a daily digest should be sent now, and send it if so.
+
+    Args:
+        applications_state: Current state.
+        snapshot: Current digest snapshot.
+        current_run_ts: Current timestamp.
+        search_config: Configuration.
+
+    Returns:
+        A tuple of (did_send_boolean, last_error_message).
+    """
     digest_settings = cast(dict[str, Any], search_config["daily_digest"])
     current_dt = parse_iso_utc(current_run_ts) or datetime.now(timezone.utc)
     digest_date = current_dt.date().isoformat()
@@ -1799,6 +2369,17 @@ def build_application_briefs_snapshot(
     applications_state: dict[str, object],
     max_items: int,
 ) -> dict[str, object]:
+    """
+    Build a summary snapshot of "application ready" jobs.
+
+    Args:
+        current_run_ts: Current timestamp.
+        applications_state: State containing application records.
+        max_items: Maximum items to include.
+
+    Returns:
+        A brief snapshot dictionary.
+    """
     current_dt = parse_iso_utc(current_run_ts) or datetime.now(timezone.utc)
     items = []
     for application in cast(list[dict[str, Any]], applications_state["applications"]):
@@ -1820,7 +2401,9 @@ def build_application_briefs_snapshot(
                 "company_control": normalize_company_control(application.get("company_control", "none")),
                 "role_profile": clean_text(str(application.get("role_profile", ""))),
                 "why_this_fits": list(cast(list[Any], application.get("why_this_fits", [])))[:3],
-                "resume_bullet_suggestions": list(cast(list[Any], application.get("resume_bullet_suggestions", [])))[:3],
+                "resume_bullet_suggestions": list(
+                    cast(list[Any], application.get("resume_bullet_suggestions", []))
+                )[:3],
                 "intro_message": clean_text(str(application.get("intro_message", ""))),
                 "notes": clean_text(str(application.get("notes", ""))),
                 "last_seen_utc": clean_text(str(application.get("last_seen_utc", ""))),
@@ -1842,6 +2425,13 @@ def build_application_briefs_snapshot(
 
 
 def save_application_briefs_snapshot(application_briefs_file: str, snapshot: dict[str, object]) -> None:
+    """
+    Save the application briefs snapshot to a JSON file.
+
+    Args:
+        application_briefs_file: Output path.
+        snapshot: Snapshot dictionary.
+    """
     atomic_write_json(Path(application_briefs_file), snapshot)
 
 
@@ -1851,6 +2441,15 @@ def save_borderline_matches_snapshot(
     candidates: list[dict[str, object]],
     max_items: int,
 ) -> None:
+    """
+    Generate and save a snapshot of borderline job matches for manual review.
+
+    Args:
+        borderline_matches_file: Output path.
+        current_run_ts: Current timestamp.
+        candidates: List of job candidates (including non-matches).
+        max_items: Maximum items to include in the snapshot.
+    """
     sorted_candidates = sorted(
         candidates,
         key=lambda item: (
