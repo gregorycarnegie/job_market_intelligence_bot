@@ -34,3 +34,5 @@ pytest_error.txt
 
 # Build / packaging
 *.egg-info/
+
+.claude/
