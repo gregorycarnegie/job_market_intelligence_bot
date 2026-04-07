@@ -218,18 +218,19 @@ def main() -> int:
                 ):
                     continue
 
-                evaluation = cast(dict[str, Any], score_job(
-                    item, source_label, profile, search_config, feedback_profile, current_run_ts, lockouts
-                ))
+                eval = cast(
+                    dict[str, Any],
+                    score_job(item, source_label, profile, search_config, feedback_profile, current_run_ts, lockouts),
+                )
                 storage.append_reviewed_fingerprints(STATE_DB_FILE, fingerprints, MAX_REVIEWED_FINGERPRINTS)
                 reviewed_count += 1
-                if not evaluation["qualified"]:
-                    candidate = cast(dict[str, object] | None, evaluation.get("candidate"))
-                    if candidate and cast(int, evaluation["score"]) >= max(0, MIN_MATCH_SCORE - BORDERLINE_MATCH_MARGIN):
+                if not eval["qualified"]:
+                    candidate = cast(dict[str, object] | None, eval.get("candidate"))
+                    if candidate and cast(int, eval["score"]) >= max(0, MIN_MATCH_SCORE - BORDERLINE_MATCH_MARGIN):
                         borderline_details.append(candidate)
                     continue
 
-                match = cast(dict[str, Any], evaluation["match"])
+                match = cast(dict[str, Any], eval["match"])
                 new_rows.append(
                     {
                         "time": match["time"],

@@ -4,9 +4,8 @@ import os
 import tempfile
 from pathlib import Path
 
-from jobbot import storage
+from jobbot import setup_logging, storage
 from jobbot.common import STATE_DB_FILE
-from jobbot.logging_config import setup_logging
 
 setup_logging()
 logger = logging.getLogger(__name__)
