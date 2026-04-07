@@ -60,21 +60,24 @@ class PullJobsTestCase(unittest.TestCase):
             link="https://example.com/jobs/monzo-it-support",
         )
 
-        evaluation = cast(dict[str, Any], pull_jobs.score_job(
-            item,
-            "example_board",
-            self.profile,
-            search_config,
-            {
-                "enabled": False,
-                "source_adjustments": {},
-                "keyword_adjustments": {},
-                "keyword_limit": 4,
-                "max_keyword_adjustment": 6,
-            },
-            "2026-04-04T10:00:00Z",
-            lockouts,
-        ))
+        evaluation = cast(
+            dict[str, Any],
+            pull_jobs.score_job(
+                item,
+                "example_board",
+                self.profile,
+                search_config,
+                {
+                    "enabled": False,
+                    "source_adjustments": {},
+                    "keyword_adjustments": {},
+                    "keyword_limit": 4,
+                    "max_keyword_adjustment": 6,
+                },
+                "2026-04-04T10:00:00Z",
+                lockouts,
+            ),
+        )
 
         self.assertTrue(evaluation["qualified"], evaluation)
         match = cast(dict[str, Any], evaluation["match"])
@@ -99,21 +102,24 @@ class PullJobsTestCase(unittest.TestCase):
             link="https://example.com/jobs/recruiter-it-support",
         )
 
-        evaluation = cast(dict[str, Any], pull_jobs.score_job(
-            item,
-            "example_board",
-            self.profile,
-            search_config,
-            {
-                "enabled": False,
-                "source_adjustments": {},
-                "keyword_adjustments": {},
-                "keyword_limit": 4,
-                "max_keyword_adjustment": 6,
-            },
-            "2026-04-04T10:00:00Z",
-            ["remote us", "us only"],
-        ))
+        evaluation = cast(
+            dict[str, Any],
+            pull_jobs.score_job(
+                item,
+                "example_board",
+                self.profile,
+                search_config,
+                {
+                    "enabled": False,
+                    "source_adjustments": {},
+                    "keyword_adjustments": {},
+                    "keyword_limit": 4,
+                    "max_keyword_adjustment": 6,
+                },
+                "2026-04-04T10:00:00Z",
+                ["remote us", "us only"],
+            ),
+        )
 
         self.assertFalse(evaluation["qualified"], evaluation)
         self.assertIn("blacklisted employer", " ".join(cast(list[str], evaluation["reasons"])))
@@ -283,12 +289,15 @@ class PullJobsTestCase(unittest.TestCase):
         cleanup = pull_jobs.prune_applications_state(applications_state, search_config, "2026-04-04T10:00:00Z")
         self.assertEqual(cleanup["removed_count"], 1, cleanup)
 
-        feedback = cast(dict[str, Any], pull_jobs.build_feedback_metrics(
-            "2026-04-04T10:00:00Z",
-            applications_state,
-            search_config,
-            cleanup,
-        ))
+        feedback = cast(
+            dict[str, Any],
+            pull_jobs.build_feedback_metrics(
+                "2026-04-04T10:00:00Z",
+                applications_state,
+                search_config,
+                cleanup,
+            ),
+        )
         self.assertGreater(feedback["source_adjustments"].get("good_board", 0), 0)
         self.assertLess(feedback["source_adjustments"].get("bad_board", 0), 0)
         self.assertGreater(feedback["keyword_adjustments"].get("active directory", 0), 0)
@@ -299,24 +308,30 @@ class PullJobsTestCase(unittest.TestCase):
             description="London hybrid role with Active Directory, Microsoft 365, troubleshooting and onboarding.",
             link="https://example.com/future-good",
         )
-        good_eval = cast(dict[str, Any], pull_jobs.score_job(
-            item,
-            "good_board",
-            self.profile,
-            search_config,
-            feedback,
-            "2026-04-04T10:05:00Z",
-            ["remote us", "us only"],
-        ))
-        bad_eval = cast(dict[str, Any], pull_jobs.score_job(
-            item,
-            "bad_board",
-            self.profile,
-            search_config,
-            feedback,
-            "2026-04-04T10:05:00Z",
-            ["remote us", "us only"],
-        ))
+        good_eval = cast(
+            dict[str, Any],
+            pull_jobs.score_job(
+                item,
+                "good_board",
+                self.profile,
+                search_config,
+                feedback,
+                "2026-04-04T10:05:00Z",
+                ["remote us", "us only"],
+            ),
+        )
+        bad_eval = cast(
+            dict[str, Any],
+            pull_jobs.score_job(
+                item,
+                "bad_board",
+                self.profile,
+                search_config,
+                feedback,
+                "2026-04-04T10:05:00Z",
+                ["remote us", "us only"],
+            ),
+        )
         self.assertGreater(cast(int, good_eval["score"]), cast(int, bad_eval["score"]))
         self.assertIn("feedback", " ".join(cast(list[str], good_eval["reasons"])).lower())
 

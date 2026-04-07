@@ -1103,9 +1103,7 @@ def score_job(
     rp_title = cast(list[str], role_profile_match["title_matches"])
     rp_desc = cast(list[str], role_profile_match["description_matches"])
     title_alignment_matches = dedupe_preserving_order(target_title_matches + rp_title)
-    skill_focus_phrases = build_focus_phrases(
-        skill_title_matches, skill_desc_matches, competency_matches, rp_desc
-    )
+    skill_focus_phrases = build_focus_phrases(skill_title_matches, skill_desc_matches, competency_matches, rp_desc)
     feedback_keywords = dedupe_preserving_order(build_focus_phrases(title_alignment_matches, skill_focus_phrases))[:8]
     score = apply_feedback_adjustments(score, reasons, source_label, feedback_keywords, feedback_profile)
     application_materials = build_application_materials(
@@ -1870,9 +1868,7 @@ def upsert_application_record(
     if application is None:
         return False
     app_list = cast(list[dict[str, Any]], applications_state["applications"])
-    existing = find_application_record(
-        app_list, cast(list[str], application["fingerprints"]), str(application["link"])
-    )
+    existing = find_application_record(app_list, cast(list[str], application["fingerprints"]), str(application["link"]))
     if existing is None:
         app_list.append(application)
         applications_state["applications"] = app_list[-MAX_APPLICATION_RECORDS:]
@@ -2435,9 +2431,9 @@ def build_application_briefs_snapshot(
                 "company_control": normalize_company_control(application.get("company_control", "none")),
                 "role_profile": clean_text(str(application.get("role_profile", ""))),
                 "why_this_fits": list(cast(list[Any], application.get("why_this_fits", [])))[:3],
-                "resume_bullet_suggestions": list(
-                    cast(list[Any], application.get("resume_bullet_suggestions", []))
-                )[:3],
+                "resume_bullet_suggestions": list(cast(list[Any], application.get("resume_bullet_suggestions", [])))[
+                    :3
+                ],
                 "intro_message": clean_text(str(application.get("intro_message", ""))),
                 "notes": clean_text(str(application.get("notes", ""))),
                 "last_seen_utc": clean_text(str(application.get("last_seen_utc", ""))),

@@ -206,6 +206,7 @@ def main() -> int:
     if not due_sources:
         logger.info("Jobs: No feeds are due for check at this time.")
     else:
+
         def fetch_task(src: dict[str, Any]) -> tuple[dict[str, Any], list[Any] | None, Exception | None]:
             try:
                 inst = create_source(src)
@@ -234,16 +235,18 @@ def main() -> int:
 
                     if failures == 10:
                         logger.error("Source %s failed 10 times consecutively. Alerting.", source_label)
-                        match_details.append({
-                            "time": current_run_ts,
-                            "title": f"⚠️ Source Failure: {source_label}",
-                            "description": f"The job source '{source_label}' has failed 10 times in a row. "
-                                           "Please check the source URL and integration settings.",
-                            "link": str(source.get("url", "https://github.com/jobbot")),
-                            "source": "System Monitor",
-                            "qualified": True,
-                            "score": 100,
-                        })
+                        match_details.append(
+                            {
+                                "time": current_run_ts,
+                                "title": f"⚠️ Source Failure: {source_label}",
+                                "description": f"The job source '{source_label}' has failed 10 times in a row. "
+                                "Please check the source URL and integration settings.",
+                                "link": str(source.get("url", "https://github.com/jobbot")),
+                                "source": "System Monitor",
+                                "qualified": True,
+                                "score": 100,
+                            }
+                        )
                     continue
 
                 # Success

@@ -1479,14 +1479,10 @@ class TheMuseSource(Source):
                 company_obj = job.get("company", {})
                 company = clean_text(str(company_obj.get("name", "") if isinstance(company_obj, dict) else ""))
                 locations = [
-                    clean_text(str(loc.get("name", "")))
-                    for loc in job.get("locations", [])
-                    if isinstance(loc, dict)
+                    clean_text(str(loc.get("name", ""))) for loc in job.get("locations", []) if isinstance(loc, dict)
                 ]
                 levels = [
-                    clean_text(str(lvl.get("name", "")))
-                    for lvl in job.get("levels", [])
-                    if isinstance(lvl, dict)
+                    clean_text(str(lvl.get("name", ""))) for lvl in job.get("levels", []) if isinstance(lvl, dict)
                 ]
 
                 items.append(

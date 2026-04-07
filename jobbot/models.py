@@ -22,6 +22,7 @@ class JobLead:
         employment_type (str): Category of employment (Full-time, Contract, etc.).
         date_posted (str): ISO or relative date string when the job was published.
     """
+
     title: str
     link: str
     source: str = ""

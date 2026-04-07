@@ -14,16 +14,24 @@ from jobbot import storage
 logger = logging.getLogger(__name__)
 
 CSV_HEADERS = [
-    "time", "title", "company", "location", "salary",
-    "source", "employment_type", "date_posted", "description", "link",
+    "time",
+    "title",
+    "company",
+    "location",
+    "salary",
+    "source",
+    "employment_type",
+    "date_posted",
+    "description",
+    "link",
 ]
 STATE_DB_FILE = "jobbot_state.sqlite3"
 FETCH_TIMEOUT_SECONDS = 20
 USER_AGENT = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36"
 MIN_MATCH_SCORE = 28
-MAX_ALERTED_LINKS = 5000
-MAX_REVIEWED_FINGERPRINTS = 50000
-MAX_APPLICATION_RECORDS = 5000
+MAX_ALERTED_LINKS = 5_000
+MAX_REVIEWED_FINGERPRINTS = 50_000
+MAX_APPLICATION_RECORDS = 5_000
 BOARD_PAGE_LIMIT = 100
 GENERIC_HTML_MAX_START_URLS = 10
 GENERIC_HTML_MAX_JOB_LINKS = 60
@@ -1355,9 +1363,7 @@ def load_alert_state(alerts_state_file: str) -> dict[str, object]:
         seen_pending_links.add(normalized["link"])
 
     alerted_links = [
-        clean_text(str(link))
-        for link in cast(list[object], state.get("alerted_links", []))
-        if clean_text(str(link))
+        clean_text(str(link)) for link in cast(list[object], state.get("alerted_links", [])) if clean_text(str(link))
     ]
 
     return {

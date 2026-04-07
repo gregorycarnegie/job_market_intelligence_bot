@@ -216,24 +216,16 @@ class ExtractAnchorLinksTestCase(unittest.TestCase):
 
 class UrlMatchesAllowedDomainsTestCase(unittest.TestCase):
     def test_matches_exact_domain(self) -> None:
-        self.assertTrue(
-            sources.url_matches_allowed_domains("https://example.com/jobs/1", ["example.com"])
-        )
+        self.assertTrue(sources.url_matches_allowed_domains("https://example.com/jobs/1", ["example.com"]))
 
     def test_matches_subdomain(self) -> None:
-        self.assertTrue(
-            sources.url_matches_allowed_domains("https://boards.example.com/jobs/1", ["example.com"])
-        )
+        self.assertTrue(sources.url_matches_allowed_domains("https://boards.example.com/jobs/1", ["example.com"]))
 
     def test_rejects_unrelated_domain(self) -> None:
-        self.assertFalse(
-            sources.url_matches_allowed_domains("https://evil.com/jobs/1", ["example.com"])
-        )
+        self.assertFalse(sources.url_matches_allowed_domains("https://evil.com/jobs/1", ["example.com"]))
 
     def test_empty_allowed_domains_allows_all(self) -> None:
-        self.assertTrue(
-            sources.url_matches_allowed_domains("https://anything.com/jobs/1", [])
-        )
+        self.assertTrue(sources.url_matches_allowed_domains("https://anything.com/jobs/1", []))
 
     def test_invalid_url_returns_false(self) -> None:
         self.assertFalse(sources.url_matches_allowed_domains("not-a-url", ["example.com"]))

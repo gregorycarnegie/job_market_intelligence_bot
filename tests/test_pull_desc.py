@@ -92,7 +92,6 @@ class PullDescTestCase(unittest.TestCase):
         self.assertEqual(len(batch), 1)
         self.assertEqual(batch[0]["title"], "New role")
 
-
     def test_main_stages_batch_when_timestamps_differ(self) -> None:
         self.seed_jobs(
             [

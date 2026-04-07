@@ -7,8 +7,16 @@ from pathlib import Path
 from typing import Any, cast
 
 CSV_HEADERS = [
-    "time", "title", "company", "location", "salary",
-    "source", "employment_type", "date_posted", "description", "link",
+    "time",
+    "title",
+    "company",
+    "location",
+    "salary",
+    "source",
+    "employment_type",
+    "date_posted",
+    "description",
+    "link",
 ]
 
 

@@ -135,8 +135,7 @@ class TelegramDigestSessionTestCase(StorageTestBase):
             )
         # Sessions 0-1 should have been pruned; only the 3 newest should remain
         still_present = sum(
-            1 for i in range(5)
-            if jobbot_storage.load_telegram_digest_session(self.db, f"session-{i}") is not None
+            1 for i in range(5) if jobbot_storage.load_telegram_digest_session(self.db, f"session-{i}") is not None
         )
         self.assertLessEqual(still_present, 3)
 
@@ -230,7 +229,14 @@ class ExportJobsToCsvTestCase(StorageTestBase):
     def test_exports_job_rows(self) -> None:
         jobbot_storage.append_jobs(
             self.db,
-            [{"time": "2026-04-04T10:00:00Z", "title": "IT Support", "description": "desc", "link": "https://example.com/1"}],
+            [
+                {
+                    "time": "2026-04-04T10:00:00Z",
+                    "title": "IT Support",
+                    "description": "desc",
+                    "link": "https://example.com/1",
+                }
+            ],
         )
         csv_file = "jobs_export.csv"
         jobbot_storage.export_jobs_to_csv(self.db, csv_file)
