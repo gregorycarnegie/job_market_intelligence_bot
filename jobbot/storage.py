@@ -142,8 +142,13 @@ def _save_scope_metadata(connection: sqlite3.Connection, scope: str, metadata: d
     )
 
 
+_POSITION_TABLES = {"reviewed_fingerprints", "applications"}
+
+
 def _next_position(connection: sqlite3.Connection, table: str) -> int:
-    row = connection.execute(f"SELECT COALESCE(MAX(position), -1) + 1 AS next_position FROM {table}").fetchone()
+    if table not in _POSITION_TABLES:
+        raise ValueError(f"Invalid table name: {table!r}")
+    row = connection.execute(f"SELECT COALESCE(MAX(position), -1) + 1 AS next_position FROM {table}").fetchone()  # noqa: S608
     return int(row["next_position"]) if row is not None else 0
 
 
@@ -181,9 +186,11 @@ def _index_application(connection: sqlite3.Connection, application: dict[str, ob
 
 
 def load_jobs(db_file: str) -> list[dict[str, str]]:
-    cols = "time, title, description, link, company, location, salary, source, employment_type, date_posted"
     with contextlib.closing(_connect(db_file)) as connection:
-        rows = connection.execute(f"SELECT {cols} FROM jobs ORDER BY id").fetchall()
+        rows = connection.execute(
+            "SELECT time, title, description, link, company, location, salary,"
+            " source, employment_type, date_posted FROM jobs ORDER BY id"
+        ).fetchall()
     return [
         {
             "time": str(row["time"]),
@@ -207,12 +214,10 @@ def load_latest_job_batch(db_file: str) -> tuple[str | None, list[dict[str, str]
         if row is None:
             return None, []
         latest_ts = str(row["time"])
-        cols = (
-            "time, title, description, link, company,"
-            " location, salary, source, employment_type, date_posted"
-        )
         batch_rows = connection.execute(
-            f"SELECT {cols} FROM jobs WHERE time = ? ORDER BY id",
+            "SELECT time, title, description, link, company,"
+            " location, salary, source, employment_type, date_posted"
+            " FROM jobs WHERE time = ? ORDER BY id",
             (latest_ts,),
         ).fetchall()
 

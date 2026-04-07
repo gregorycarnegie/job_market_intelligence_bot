@@ -63,9 +63,9 @@
 
 - [ ] Enable strict mypy for all `jobbot/` modules — currently `ignore_errors = true` is set for `matching`, `common`, `sources`, and `storage` in `pyproject.toml`; fix the suppressed type errors.
 - [ ] Add docstrings to all public functions, prioritising the scoring pipeline in `matching.py` and source implementations in `sources.py`.
-- [ ] Replace f-string SQL table name interpolation in `storage.py` with safe alternatives (validated constants or allowlist checks).
-- [ ] Raise pytest coverage threshold from 70% to 85%, with targeted tests for `matching.py` and `sources.py` gap areas.
+- [x] Replace f-string SQL table name interpolation in `storage.py` with safe alternatives (validated constants or allowlist checks).
+- [x] Raise pytest coverage threshold from 70% to 85%, with targeted tests for `matching.py` and `sources.py` gap areas.
 - [ ] Add retry logic with exponential backoff for source HTTP fetches so transient failures do not silently skip a source.
-- [ ] Add `uv audit` (or equivalent) to CI to catch dependency vulnerabilities on every push.
+- [x] Add `uv audit` (or equivalent) to CI to catch dependency vulnerabilities on every push.
 - [ ] Replace ad-hoc print/logging calls with structured logging (log levels, consistent format) to make monitoring and debugging easier.
 - [ ] Add JSON schema validation for config files (`company_boards.json`, `job_search_settings.json`) so malformed configs fail fast with a clear error rather than at runtime.
