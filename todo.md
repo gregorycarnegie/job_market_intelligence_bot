@@ -69,3 +69,10 @@
 - [x] Add `uv audit` (or equivalent) to CI to catch dependency vulnerabilities on every push.
 - [x] Replace ad-hoc print/logging calls with structured logging (log levels, consistent format) to make monitoring and debugging easier.
 - [x] Add JSON schema validation for config files (`company_boards.json`, `job_search_settings.json`) so malformed configs fail fast with a clear error rather than at runtime.
+
+## Project Hardening (Toward 10/10)
+
+- [ ] **Concurrent Source Fetching**: Implement `ThreadPoolExecutor` in the main fetch loop to run source ingestion in parallel, reducing overall runtime.
+- [ ] **Lightweight Schema Migrations**: Add a `migrations` table to the SQLite database (`version` -> `applied_ddl`) to safely handle database schema upgrades.
+- [ ] **Consecutive Failure Alerting**: Track per-source failure counts in the database and send a Telegram notification if a source fails $N$ times in a row.
+- [ ] **Deep Docstring Audit**: Perform a final pass on the "dense" logic in `matching.py` and `sources.py` to ensure complex scoring and parsing rules are fully documented for onboarding.
