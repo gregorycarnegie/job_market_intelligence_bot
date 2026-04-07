@@ -22,6 +22,7 @@ from jobbot.common import (
     get_source_display_name,
     is_feed_due,
 )
+from jobbot.logging_config import setup_logging
 from jobbot.matching import (
     build_daily_digest_snapshot,
     build_feedback_metrics,
@@ -54,8 +55,7 @@ def _load_dotenv(path: str = ".env") -> None:
 
 
 _load_dotenv()
-
-logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+setup_logging()
 logger = logging.getLogger(__name__)
 
 CSV_FILE = "jobs.csv"
@@ -254,7 +254,7 @@ def main() -> int:
 
         except (ElementTree.ParseError, HTTPError, URLError, OSError, ValueError) as exc:
             source_ref = source.get("url") or source.get("platform") or source.get("name")
-            logger.warning(f"skipping {source_ref} — {exc}")
+            logger.warning("skipping %s — %s", source_ref, exc)
             continue
 
     save_feed_state(feed_state)
@@ -296,24 +296,26 @@ def main() -> int:
         or cleanup_summary["removed_count"] > 0
     ):
         logger.info(
-            "Jobs: "
-            f"found {new_hits} new matches, "
-            f"reviewed {reviewed_count} new items, "
-            f"tracked {applications_created} applications, "
-            f"seeded {seeded_applications}, "
-            f"pruned {cleanup_summary['removed_count']} stale applications, "
-            f"queued {queued_count} alerts, "
-            f"sent {sent_count}, "
-            f"pending {len(alert_state['pending_alerts'])}, "
-            f"digest {'sent' if digest_sent else 'not sent'}."
+            "Jobs: found %d new matches, reviewed %d new items, tracked %d applications, "
+            "seeded %d, pruned %d stale applications, queued %d alerts, sent %d, "
+            "pending %d, digest %s.",
+            new_hits,
+            reviewed_count,
+            applications_created,
+            seeded_applications,
+            cleanup_summary["removed_count"],
+            queued_count,
+            sent_count,
+            len(alert_state["pending_alerts"]),
+            "sent" if digest_sent else "not sent",
         )
     else:
         logger.info("Jobs: No new matches found in this sweep.")
 
     if delivery_error:
-        logger.error(f"Jobs: {delivery_error}")
+        logger.error("Jobs: %s", delivery_error)
     if digest_error:
-        logger.error(f"Jobs: {digest_error}")
+        logger.error("Jobs: %s", digest_error)
 
     return 0
 

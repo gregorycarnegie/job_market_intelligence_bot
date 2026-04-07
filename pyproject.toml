@@ -18,8 +18,11 @@ line-length = 120
 target-version = "py310"
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "W", "UP", "B", "C4", "SIM", "RUF"]
+select = ["E", "F", "G", "I", "W", "UP", "B", "C4", "SIM", "RUF"]
 ignore = ["COM812", "ISC001"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["SIM117"]  # nested `with` in tests aids readability; not a safety issue
 
 [tool.mypy]
 python_version = "3.10"

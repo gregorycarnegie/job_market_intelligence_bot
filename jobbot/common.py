@@ -130,10 +130,13 @@ def fetch_live_currency_rates() -> None:
         if "EUR" in rates:
             CURRENCY_TO_GBP["eur"] = round(1.0 / rates["EUR"], 6)
         logger.info(
-            f"Rates: 1 GBP = {rates.get('USD', '?')} USD, {rates.get('EUR', '?')} EUR (date: {data.get('date', '?')})"
+            "Rates: 1 GBP = %s USD, %s EUR (date: %s)",
+            rates.get("USD", "?"),
+            rates.get("EUR", "?"),
+            data.get("date", "?"),
         )
     except Exception as exc:
-        logger.warning(f"could not fetch live currency rates, using defaults — {exc}")
+        logger.warning("could not fetch live currency rates, using defaults — %s", exc)
 
 
 CADENCE_TO_ANNUAL_MULTIPLIER = {
@@ -885,7 +888,7 @@ def load_job_search_config(config_file: str) -> dict[str, object]:
             if isinstance(loaded, dict):
                 raw_data = loaded
         except (json.JSONDecodeError, OSError) as exc:
-            logger.warning(f"skipping {config_file} — {exc}")
+            logger.error("skipping %s — %s", config_file, exc)
 
     whitelist = normalize_company_control_values(raw_data.get("company_whitelist", []))
     blacklist = normalize_company_control_values(raw_data.get("company_blacklist", []))

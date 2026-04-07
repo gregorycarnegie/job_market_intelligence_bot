@@ -780,27 +780,27 @@ def load_company_boards(company_boards_file: str) -> list[dict[str, object]]:
         with open(boards_path, encoding="utf-8") as f:
             raw_data = json.load(f)
     except (json.JSONDecodeError, OSError) as exc:
-        logger.warning(f"skipping {company_boards_file} — {exc}")
+        logger.error("skipping %s — %s", company_boards_file, exc)
         return []
 
     if not isinstance(raw_data, list):
-        logger.warning(f"file {company_boards_file} must contain a JSON list.")
+        logger.error("file %s must contain a JSON list.", company_boards_file)
         return []
 
     normalized_boards = []
     seen_names = set()
     for index, raw_board in enumerate(raw_data):
         if not isinstance(raw_board, dict):
-            logger.warning(f"skipping board #{index + 1} in {company_boards_file} — expected an object.")
+            logger.warning("skipping board #%d in %s — expected an object.", index + 1, company_boards_file)
             continue
         normalized_board = normalize_company_board(raw_board)
         if normalized_board is None:
             logger.warning(
-                f"skipping board #{index + 1} in {company_boards_file} — invalid or missing required fields."
+                "skipping board #%d in %s — invalid or missing required fields.", index + 1, company_boards_file
             )
             continue
         if normalized_board["name"] in seen_names:
-            logger.warning(f"skipping duplicate board name {normalized_board['name']!r}.")
+            logger.warning("skipping duplicate board name %r.", normalized_board["name"])
             continue
         normalized_boards.append(normalized_board)
         seen_names.add(str(normalized_board["name"]))

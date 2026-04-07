@@ -67,5 +67,5 @@
 - [x] Raise pytest coverage threshold from 70% to 85%, with targeted tests for `matching.py` and `sources.py` gap areas.
 - [x] Add retry logic with exponential backoff for source HTTP fetches so transient failures do not silently skip a source.
 - [x] Add `uv audit` (or equivalent) to CI to catch dependency vulnerabilities on every push.
-- [ ] Replace ad-hoc print/logging calls with structured logging (log levels, consistent format) to make monitoring and debugging easier.
-- [ ] Add JSON schema validation for config files (`company_boards.json`, `job_search_settings.json`) so malformed configs fail fast with a clear error rather than at runtime.
+- [x] Replace ad-hoc print/logging calls with structured logging (log levels, consistent format) to make monitoring and debugging easier.
+- [x] Add JSON schema validation for config files (`company_boards.json`, `job_search_settings.json`) so malformed configs fail fast with a clear error rather than at runtime.

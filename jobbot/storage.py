@@ -148,7 +148,7 @@ _POSITION_TABLES = {"reviewed_fingerprints", "applications"}
 def _next_position(connection: sqlite3.Connection, table: str) -> int:
     if table not in _POSITION_TABLES:
         raise ValueError(f"Invalid table name: {table!r}")
-    row = connection.execute(f"SELECT COALESCE(MAX(position), -1) + 1 AS next_position FROM {table}").fetchone()  # noqa: S608
+    row = connection.execute(f"SELECT COALESCE(MAX(position), -1) + 1 AS next_position FROM {table}").fetchone()
     return int(row["next_position"]) if row is not None else 0
 
 

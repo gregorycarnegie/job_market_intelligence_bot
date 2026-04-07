@@ -4,6 +4,7 @@ from pathlib import Path
 from time import sleep
 
 from jobbot import matching
+from jobbot.logging_config import setup_logging
 
 
 def _load_dotenv(path: str = ".env") -> None:
@@ -23,8 +24,7 @@ def _load_dotenv(path: str = ".env") -> None:
 
 
 _load_dotenv()
-
-logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+setup_logging()
 logger = logging.getLogger(__name__)
 
 LONG_POLL_TIMEOUT_SECONDS = 25
@@ -54,7 +54,7 @@ def run_callback_worker(
         warned_missing_token = False
         _, error = matching.process_telegram_callback_updates(timeout=max(0, poll_timeout))
         if error:
-            logger.error(f"Telegram worker: {error}")
+            logger.error("Telegram worker: %s", error)
             sleep(max(1, error_retry_seconds))
 
     return 0
