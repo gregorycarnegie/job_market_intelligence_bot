@@ -1,16 +1,24 @@
-# Python cache
+# --- Python / Environment ---
 __pycache__/
 *.py[cod]
+*.egg-info/
+.venv/
 
-# Local environment
+# --- Tools / IDEs / Editors ---
+.claude/
+.codex
+.idea/
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+
+# --- Local Configuration ---
 .env
 .env.*
 !.env.example
 
-# Runtime database
+# --- Runtime Persistence (Local DB & State) ---
 jobbot_state.sqlite3
-
-# Runtime artifacts
 alerts_state.json
 applications.json
 application_briefs.json
@@ -19,26 +27,15 @@ daily_digest.json
 desc.json
 feed_state.json
 feedback_metrics.json
+seen_jobs_state.json
+
+# --- Runtime Data / Output ---
 jobs.csv
 matches.json
 output.log
-seen_jobs_state.json
 
-.idea/
-
-# Test / coverage artefacts
+# --- Test / Coverage ---
 .coverage
-coverage.xml
 cov.txt
+coverage.xml
 pytest_error.txt
-
-# Build / packaging
-*.egg-info/
-
-.claude/
-.codex
-
-.mypy_cache/
-.pytest_cache/
-.ruff_cache/
-.venv/
