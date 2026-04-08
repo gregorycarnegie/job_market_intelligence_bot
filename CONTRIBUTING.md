@@ -1,66 +1,79 @@
 # Contributing
 
-## Dev setup
+## Dev Setup
 
 Requires Python 3.10+ and [uv](https://docs.astral.sh/uv/).
 
 ```bash
-git clone <repo-url>
-cd job_market_intelligence_bot-main
+git clone https://github.com/gregorycarnegie/job_market_intelligence_bot.git
+cd job_market_intelligence_bot
 uv sync --extra dev
 ```
 
-Copy the example config files and fill them in:
+Optional local setup files:
 
 ```bash
 cp .env.example .env
-cp company_boards.json.example company_boards.json      # optional
-cp job_search_config.json.example job_search_config.json  # optional
 ```
 
-Edit `resume.json` with your own skills, target roles, and location preferences before running.
+If you need `company_boards.json` or `job_search_config.json`, create them manually. Example values are documented in `README.md`, but example files are not currently committed to the repo.
 
-## Running the tests
+Edit `resume.json` with your own skills, target roles, and location preferences before running the bot locally.
+
+## Running The Tests
+
+Quick full-suite run:
 
 ```bash
-uv run pytest tests/ --cov=jobbot --cov-report=term-missing
+python3 -m unittest discover -s tests -v
 ```
 
-The CI enforces a minimum of **85% coverage**. New code should include tests.
+CI-equivalent coverage run:
 
-## Code quality
+```bash
+uv run pytest --cov=jobbot tests/ --cov-fail-under=85 --cov-report=term-missing
+```
 
-All of the following must pass before merging:
+The GitHub Actions workflow currently enforces a minimum of **85% coverage**.
+
+## Code Quality
+
+All the following should pass before merging:
 
 ```bash
 uv run ruff check .          # linter
 uv run ruff format --check . # formatter
 uv run mypy .                # type checker
 uv run pylint jobbot         # style/complexity
-uv run uv audit              # dependency vulnerability scan
+uv audit                     # dependency vulnerability scan
 ```
 
-Run `uv run ruff format .` to auto-format before committing.
+Auto-format before committing with:
 
-## Adding a new job source
+```bash
+uv run ruff format .
+```
 
-1. Create a class in [jobbot/sources.py](jobbot/sources.py) that extends the abstract `Source` base class and implements `fetch() -> list[JobLead]`.
-2. Register an instance of the new source in the `build_sources()` factory (also in `sources.py`).
-3. Add tests in `tests/` covering both the happy path and at least one failure mode (e.g. HTTP error, empty response).
-4. Document any required config keys in `company_boards.json.example` or `job_search_config.json.example` as appropriate.
+## Adding A New Job Source
 
-## Project layout
+1. Create a class in `jobbot/sources.py` that extends the abstract `Source` base class and implements `fetch() -> list[JobLead]`.
+2. Register it in `create_source()` in `jobbot/sources.py`.
+3. If you are adding a new company-board platform, also update the board-specific dispatch and normalization paths in `jobbot/sources.py`.
+4. Add tests in `tests/` covering the happy path and at least one failure mode.
+5. Document any new config keys in `README.md`. If the repo later gains committed example config files, update those too.
+
+## Project Layout
 
 ```text
 jobbot/
-  models.py         # JobLead dataclass and abstract Source base class
-  sources.py        # All source integrations (RSS, Greenhouse, Lever, Ashby, ...)
+  models.py         # JobLead dataclass and shared typed state models
+  sources.py        # Source integrations and company-board loaders
   matching.py       # Scoring pipeline, alerts, digest, feedback learning
   storage.py        # SQLite abstraction and schema migrations
-  common.py         # Constants, config loading, text helpers
+  common.py         # Constants, built-in feeds, config loading, text helpers
   logging_config.py # Structured logging setup
-pull_jobs.py        # Main entrypoint — orchestrates fetch → score → alert
-pull_desc.py        # Stages latest batch into desc.json for OpenClaw
+pull_jobs.py        # Main entrypoint: fetch -> score -> persist -> alert
+pull_desc.py        # Stages the latest matched batch into desc.json
 telegram_callback_worker.py  # Long-polls Telegram callback_query updates
-tests/              # unittest-based test suite
+tests/              # unittest/pytest-compatible test suite
 ```
