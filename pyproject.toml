@@ -6,12 +6,12 @@ requires-python = ">=3.10"
 dependencies = [
     "mypy>=1.20.0",
     "pylint>=4.0.5",
-    "pytest>=9.0.2",
+    "pytest==9.0.3",
     "ruff>=0.15.9",
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=9.0.2", "pytest-cov>=6.0.0", "ruff>=0.15.9", "mypy>=1.20.0", "pylint>=4.0.5"]
+dev = ["pytest>=9.0.3", "pytest-cov>=6.0.0", "ruff>=0.15.9", "mypy>=1.20.0", "pylint>=4.0.5"]
 
 [tool.ruff]
 line-length = 120

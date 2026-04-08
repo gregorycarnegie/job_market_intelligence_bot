@@ -37,6 +37,7 @@ from jobbot.matching import (
     sync_application_outcomes,
     upsert_application_record_in_storage,
 )
+from jobbot.models import AlertState, ApplicationsState, FeedState, ResumeProfile, SearchConfig, SeenJobsState
 from jobbot.sources import create_source
 
 
@@ -75,11 +76,11 @@ BORDERLINE_MATCHES_FILE = "borderline_matches.json"
 FEEDBACK_METRICS_FILE = "feedback_metrics.json"
 
 
-def load_resume_profile() -> dict[str, object]:
+def load_resume_profile() -> ResumeProfile:
     return common.load_resume_profile(RESUME_FILE)
 
 
-def load_job_search_config() -> dict[str, object]:
+def load_job_search_config() -> SearchConfig:
     return common.load_job_search_config(JOB_SEARCH_CONFIG_FILE)
 
 
@@ -87,7 +88,7 @@ def load_feed_state() -> dict[str, dict[str, float]]:
     return common.load_feed_state(FEED_STATE_FILE)
 
 
-def save_feed_state(feed_state: dict[str, dict[str, float]]) -> None:
+def save_feed_state(feed_state: FeedState) -> None:
     common.save_feed_state(FEED_STATE_FILE, feed_state)
 
 
@@ -99,19 +100,19 @@ def append_rows(rows: list[dict[str, str]]) -> None:
     common.append_rows(CSV_FILE, rows)
 
 
-def load_seen_jobs_state() -> dict[str, object]:
+def load_seen_jobs_state() -> SeenJobsState:
     return common.load_seen_jobs_state(SEEN_JOBS_STATE_FILE)
 
 
-def save_seen_jobs_state(seen_jobs_state: dict[str, object]) -> None:
+def save_seen_jobs_state(seen_jobs_state: SeenJobsState) -> None:
     common.save_seen_jobs_state(SEEN_JOBS_STATE_FILE, seen_jobs_state)
 
 
-def load_alert_state() -> dict[str, object]:
+def load_alert_state() -> AlertState:
     return common.load_alert_state(ALERTS_STATE_FILE)
 
 
-def save_alert_state(alert_state: dict[str, object]) -> None:
+def save_alert_state(alert_state: AlertState) -> None:
     common.save_alert_state(ALERTS_STATE_FILE, alert_state)
 
 
@@ -123,11 +124,11 @@ def load_company_boards() -> list[dict[str, object]]:
     return source_module.load_company_boards(COMPANY_BOARDS_FILE)
 
 
-def load_applications_state() -> dict[str, object]:
+def load_applications_state() -> ApplicationsState:
     return matching.load_applications_state(APPLICATIONS_FILE)
 
 
-def save_applications_state(applications_state: dict[str, object]) -> None:
+def save_applications_state(applications_state: ApplicationsState) -> None:
     matching.save_applications_state(APPLICATIONS_FILE, applications_state)
 
 
@@ -141,7 +142,7 @@ def save_daily_digest_snapshot(snapshot: dict[str, object]) -> None:
 
 def build_application_briefs_snapshot(
     current_run_ts: str,
-    applications_state: dict[str, object],
+    applications_state: ApplicationsState,
     max_items: int = DEFAULT_APPLICATION_BRIEFS_MAX_ITEMS,
 ) -> dict[str, object]:
     return matching.build_application_briefs_snapshot(current_run_ts, applications_state, max_items)
@@ -361,7 +362,7 @@ def main() -> int:
             cast(int, cleanup_summary["removed_count"]),
             queued_count,
             sent_count,
-            len(cast(list[object], alert_state["pending_alerts"])),
+            len(alert_state["pending_alerts"]),
             "sent" if digest_sent else "not sent",
         )
     else:

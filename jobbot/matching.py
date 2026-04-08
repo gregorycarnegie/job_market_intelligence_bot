@@ -10,7 +10,7 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
-from jobbot import storage
+import jobbot.storage as storage
 from jobbot.common import (
     APPLICATION_READY_SCORE,
     APPLICATION_STATUSES,
@@ -53,7 +53,7 @@ from jobbot.common import (
     stronger_company_control,
     truncate_text,
 )
-from jobbot.models import JobLead
+from jobbot.models import AlertState, ApplicationsState, JobLead
 
 
 def normalize_application_record(payload: Mapping[str, object]) -> dict[str, object] | None:
@@ -161,7 +161,7 @@ def normalize_application_record(payload: Mapping[str, object]) -> dict[str, obj
     }
 
 
-def load_applications_state(applications_file: str) -> dict[str, object]:
+def load_applications_state(applications_file: str) -> ApplicationsState:
     """
     Load the applications state from the database, normalizing and deduping records.
 
@@ -174,7 +174,7 @@ def load_applications_state(applications_file: str) -> dict[str, object]:
     data = storage.load_applications_state(STATE_DB_FILE)
     applications = []
     seen_keys = set()
-    for payload in cast(list[object], data.get("applications", [])):
+    for payload in data["applications"]:
         if not isinstance(payload, dict):
             continue
         normalized = normalize_application_record(payload)
@@ -186,7 +186,7 @@ def load_applications_state(applications_file: str) -> dict[str, object]:
         applications.append(normalized)
         seen_keys.add(dedupe_key)
 
-    state: dict[str, object] = {
+    state: ApplicationsState = {
         "applications": applications[-MAX_APPLICATION_RECORDS:],
         "last_updated_utc": clean_text(str(data.get("last_updated_utc", ""))),
         "last_digest_utc": clean_text(str(data.get("last_digest_utc", ""))),
@@ -198,7 +198,7 @@ def load_applications_state(applications_file: str) -> dict[str, object]:
     return state
 
 
-def save_applications_state(applications_file: str, applications_state: dict[str, object]) -> None:
+def save_applications_state(applications_file: str, applications_state: ApplicationsState) -> None:
     """
     Save the applications state to both the SQLite database and the legacy JSON file.
 
@@ -583,9 +583,7 @@ def evaluate_role_profile(
     return best_match
 
 
-def select_resume_evidence(
-    profile: ResumeProfile, focus_phrases: list[str], limit: int = 3
-) -> list[dict[str, Any]]:
+def select_resume_evidence(profile: ResumeProfile, focus_phrases: list[str], limit: int = 3) -> list[dict[str, Any]]:
     """
     Select the most relevant experience entries from a profile for a given role.
 
@@ -1166,9 +1164,7 @@ def score_job(
 
     score += _apply_title_weights(normalized_title, reasons)
 
-    rp_delta, role_profile_match = _apply_role_profile_score(
-        normalized_title, normalized_desc, search_config, reasons
-    )
+    rp_delta, role_profile_match = _apply_role_profile_score(normalized_title, normalized_desc, search_config, reasons)
     score += rp_delta
 
     score += _apply_salary_preferences(raw_title, raw_desc, prefs, reasons)
@@ -1213,7 +1209,7 @@ def score_job(
     }
 
 
-def queue_pending_alerts(alert_state: dict[str, object], matches: list[dict[str, object]]) -> int:
+def queue_pending_alerts(alert_state: AlertState, matches: list[dict[str, object]]) -> int:
     """
     Identify new matches that haven't been alerted yet and add them to the pending queue.
 
@@ -1224,9 +1220,9 @@ def queue_pending_alerts(alert_state: dict[str, object], matches: list[dict[str,
     Returns:
         The number of new alerts queued.
     """
-    pending_alerts = cast(list[dict[str, Any]], alert_state["pending_alerts"])
+    pending_alerts = alert_state["pending_alerts"]
     pending_links = {str(alert["link"]) for alert in pending_alerts}
-    alerted_links = {str(link) for link in cast(list[object], alert_state["alerted_links"])}
+    alerted_links = {str(link) for link in alert_state["alerted_links"]}
     queued = 0
     for match in matches:
         link = str(match["link"])
@@ -1506,7 +1502,7 @@ def fetch_telegram_updates(
     return True, [item for item in result if isinstance(item, dict)], ""
 
 
-def deliver_pending_alerts(alert_state: dict[str, object], current_run_ts: str) -> tuple[int, str]:
+def deliver_pending_alerts(alert_state: AlertState, current_run_ts: str) -> tuple[int, str]:
     """
     Send all pending alerts via Telegram.
 
@@ -1517,7 +1513,7 @@ def deliver_pending_alerts(alert_state: dict[str, object], current_run_ts: str) 
     Returns:
         A tuple of (number_of_alerts_sent, last_error_message).
     """
-    pending_alerts = list(cast(list[dict[str, Any]], alert_state["pending_alerts"]))
+    pending_alerts = list(alert_state["pending_alerts"])
     if not pending_alerts:
         alert_state["last_delivery_error"] = ""
         return 0, ""
@@ -1549,7 +1545,7 @@ def deliver_pending_alerts(alert_state: dict[str, object], current_run_ts: str) 
     return sent_count, ""
 
 
-def sync_application_outcomes(applications_state: dict[str, object], observed_at_utc: str) -> None:
+def sync_application_outcomes(applications_state: ApplicationsState, observed_at_utc: str) -> None:
     """
     Synchronize timestamps for application outcome changes.
 
@@ -1557,7 +1553,7 @@ def sync_application_outcomes(applications_state: dict[str, object], observed_at
         applications_state: The current applications state.
         observed_at_utc: The timestamp to use for newly observed status changes.
     """
-    for application in cast(list[dict[str, Any]], applications_state["applications"]):
+    for application in applications_state["applications"]:
         status = normalize_application_status(application.get("status", "new"))
         application["status"] = status
         fallback_observed_utc = (
@@ -1578,8 +1574,8 @@ def sync_application_outcomes(applications_state: dict[str, object], observed_at
 
 
 def prune_applications_state(
-    applications_state: dict[str, object],
-    search_config: dict[str, object],
+    applications_state: ApplicationsState,
+    search_config: SearchConfig,
     current_run_ts: str,
 ) -> dict[str, object]:
     """
@@ -1594,8 +1590,8 @@ def prune_applications_state(
         A summary dictionary of pruned items.
     """
     current_dt = parse_iso_utc(current_run_ts) or datetime.now(timezone.utc)
-    feedback_settings = cast(dict[str, Any], search_config["feedback"])
-    applications = cast(list[dict[str, Any]], applications_state["applications"])
+    feedback_settings = search_config["feedback"]
+    applications = applications_state["applications"]
     before_count = len(applications)
     removed_by_status: dict[str, int] = {}
     retained = []
@@ -1685,8 +1681,8 @@ def compute_feedback_adjustment(counts: dict[str, int], max_adjustment: int, min
 
 def build_feedback_metrics(
     current_run_ts: str,
-    applications_state: dict[str, object],
-    search_config: dict[str, object],
+    applications_state: ApplicationsState,
+    search_config: SearchConfig,
     cleanup_summary: dict[str, object],
 ) -> dict[str, object]:
     """
@@ -1701,7 +1697,7 @@ def build_feedback_metrics(
     Returns:
         A feedback model dictionary with source and keyword adjustments.
     """
-    feedback_settings = cast(dict[str, Any], search_config["feedback"])
+    feedback_settings = search_config["feedback"]
     status_counts = dict.fromkeys(sorted(APPLICATION_STATUSES), 0)
     outcome_sample_count = 0
     source_counters: dict[str, dict[str, int]] = {}
@@ -1912,7 +1908,7 @@ def find_application_record(
 
 
 def upsert_application_record(
-    applications_state: dict[str, object],
+    applications_state: ApplicationsState,
     payload: dict[str, object],
     seen_at_utc: str,
 ) -> bool:
@@ -1936,7 +1932,7 @@ def upsert_application_record(
     )
     if application is None:
         return False
-    app_list = cast(list[dict[str, Any]], applications_state["applications"])
+    app_list = applications_state["applications"]
     existing = find_application_record(app_list, cast(list[str], application["fingerprints"]), str(application["link"]))
     if existing is None:
         app_list.append(application)
@@ -1987,7 +1983,7 @@ def upsert_application_record_in_storage(payload: dict[str, object], seen_at_utc
 
 
 def seed_applications_from_existing_jobs(
-    applications_state: dict[str, object],
+    applications_state: ApplicationsState,
     existing_jobs: list[dict[str, str]],
 ) -> int:
     """
@@ -2058,8 +2054,8 @@ def rank_application_for_digest(application: dict[str, object], current_dt: date
 
 def build_daily_digest_snapshot(
     current_run_ts: str,
-    applications_state: dict[str, object],
-    search_config: dict[str, object],
+    applications_state: ApplicationsState,
+    search_config: SearchConfig,
 ) -> dict[str, object]:
     """
     Create a snapshot of the top matches for the daily digest.
@@ -2073,7 +2069,7 @@ def build_daily_digest_snapshot(
         A dictionary representing the daily digest snapshot.
     """
     current_dt = parse_iso_utc(current_run_ts) or datetime.now(timezone.utc)
-    digest_settings = cast(dict[str, Any], search_config["daily_digest"])
+    digest_settings = search_config["daily_digest"]
     items = []
     for application in cast(list[dict[str, Any]], applications_state["applications"]):
         status = normalize_application_status(application.get("status", "new"))
@@ -2406,10 +2402,10 @@ def process_telegram_callback_updates(timeout: int = 0, limit: int = 20) -> tupl
 
 
 def maybe_send_daily_digest(
-    applications_state: dict[str, object],
+    applications_state: ApplicationsState,
     snapshot: dict[str, object],
     current_run_ts: str,
-    search_config: dict[str, object],
+    search_config: SearchConfig,
 ) -> tuple[bool, str]:
     """
     Determine if a daily digest should be sent now, and send it if so.
@@ -2423,7 +2419,7 @@ def maybe_send_daily_digest(
     Returns:
         A tuple of (did_send_boolean, last_error_message).
     """
-    digest_settings = cast(dict[str, Any], search_config["daily_digest"])
+    digest_settings = search_config["daily_digest"]
     current_dt = parse_iso_utc(current_run_ts) or datetime.now(timezone.utc)
     digest_date = current_dt.date().isoformat()
     if not digest_settings["enabled"]:
@@ -2465,7 +2461,7 @@ def maybe_send_daily_digest(
 
 def build_application_briefs_snapshot(
     current_run_ts: str,
-    applications_state: dict[str, object],
+    applications_state: ApplicationsState,
     max_items: int,
 ) -> dict[str, object]:
     """
@@ -2481,7 +2477,7 @@ def build_application_briefs_snapshot(
     """
     current_dt = parse_iso_utc(current_run_ts) or datetime.now(timezone.utc)
     items = []
-    for application in cast(list[dict[str, Any]], applications_state["applications"]):
+    for application in applications_state["applications"]:
         if not parse_bool(application.get("application_ready", False), False):
             continue
         status = normalize_application_status(application.get("status", "new"))

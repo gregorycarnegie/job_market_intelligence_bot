@@ -6,10 +6,19 @@ import urllib.request
 from collections.abc import Mapping
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, TypedDict, cast
+from typing import Any, cast
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
-from jobbot import storage
+import jobbot.storage as storage
+from jobbot.models import (
+    AlertState,
+    ApplicationsState,
+    FeedState,
+    PatternEntry,
+    ResumeProfile,
+    SearchConfig,
+    SeenJobsState,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -388,66 +397,6 @@ COMPANY_BOARD_REQUIRED_FIELDS = {
     "workable": ("account_subdomain",),
     "generic_html": ("start_urls",),
 }
-
-PatternEntry = tuple[str, re.Pattern[str]]
-
-
-class AlertState(TypedDict):
-    """Persistent state for the Telegram alert queue and delivery history."""
-
-    alerted_links: list[str]
-    pending_alerts: list[dict[str, object]]
-    last_run_utc: str
-    last_delivery_utc: str
-    last_delivery_error: str
-
-
-class SeenJobsState(TypedDict):
-    """Persistent state tracking which job fingerprints have already been reviewed."""
-
-    reviewed_fingerprints: list[str]
-    last_run_utc: str
-
-
-class ApplicationsState(TypedDict):
-    """Persistent state for application records and digest/feedback metadata."""
-
-    applications: list[dict[str, object]]
-    last_updated_utc: str
-    last_digest_utc: str
-    last_digest_date_utc: str
-    last_digest_error: str
-    last_feedback_utc: str
-    last_cleanup_utc: str
-
-
-class ResumeProfile(TypedDict):
-    """Pre-processed resume data with compiled pattern entries for matching."""
-
-    resume: dict[str, object]
-    candidate_name: str
-    candidate_title: str
-    resume_summary: str
-    prefs: dict[str, object]
-    preferred_locations: list[str]
-    target_role_entries: list[PatternEntry]
-    skill_entries: list[PatternEntry]
-    competency_entries: list[PatternEntry]
-    experience_entries: list[dict[str, str]]
-
-
-class SearchConfig(TypedDict):
-    """Processed job-search configuration with compiled company-control pattern entries."""
-
-    company_whitelist: list[str]
-    company_blacklist: list[str]
-    priority_companies: list[str]
-    company_whitelist_entries: list[PatternEntry]
-    company_blacklist_entries: list[PatternEntry]
-    priority_company_entries: list[PatternEntry]
-    role_profiles: list[dict[str, object]]
-    daily_digest: dict[str, object]
-    feedback: dict[str, object]
 
 
 def clean_text(text: str) -> str:
@@ -1252,7 +1201,7 @@ def atomic_write_json(path: Path, payload: object) -> None:
     temp_path.replace(path)
 
 
-def load_feed_state(feed_state_file: str) -> dict[str, dict[str, float]]:
+def load_feed_state(feed_state_file: str) -> FeedState:
     """
     Load the feed check state (legacy wrapper for storage.load_feed_state).
 
@@ -1265,7 +1214,7 @@ def load_feed_state(feed_state_file: str) -> dict[str, dict[str, float]]:
     return storage.load_feed_state(STATE_DB_FILE)
 
 
-def save_feed_state(feed_state_file: str, feed_state: dict[str, dict[str, float]]) -> None:
+def save_feed_state(feed_state_file: str, feed_state: FeedState) -> None:
     """
     Save the feed check state to DB and legacy JSON.
 
@@ -1277,7 +1226,7 @@ def save_feed_state(feed_state_file: str, feed_state: dict[str, dict[str, float]
     atomic_write_json(Path(feed_state_file), feed_state)
 
 
-def is_feed_due(feed: Mapping[str, object], feed_state: dict[str, dict[str, float]], now_ts: float) -> bool:
+def is_feed_due(feed: Mapping[str, object], feed_state: FeedState, now_ts: float) -> bool:
     """
     Determine if a feed is due for a check based on its configured interval.
 
@@ -1335,7 +1284,7 @@ def append_rows(csv_file: str, rows: list[dict[str, str]]) -> None:
     storage.export_jobs_to_csv(STATE_DB_FILE, csv_file)
 
 
-def load_seen_jobs_state(seen_jobs_state_file: str) -> dict[str, object]:
+def load_seen_jobs_state(seen_jobs_state_file: str) -> SeenJobsState:
     """
     Load the seen jobs tracker state, enforcing size limits on reviewed fingerprints.
 
@@ -1352,7 +1301,7 @@ def load_seen_jobs_state(seen_jobs_state_file: str) -> dict[str, object]:
     return state
 
 
-def save_seen_jobs_state(seen_jobs_state_file: str, seen_jobs_state: dict[str, object]) -> None:
+def save_seen_jobs_state(seen_jobs_state_file: str, seen_jobs_state: SeenJobsState) -> None:
     """
     Save the seen jobs state to DB and legacy JSON.
 
@@ -1398,7 +1347,7 @@ def normalize_pending_alert(payload: dict[str, object]) -> dict[str, object] | N
     }
 
 
-def load_alert_state(alerts_state_file: str) -> dict[str, object]:
+def load_alert_state(alerts_state_file: str) -> AlertState:
     """
     Load and normalize the alert state, enforcing history limits.
 
@@ -1433,7 +1382,7 @@ def load_alert_state(alerts_state_file: str) -> dict[str, object]:
     }
 
 
-def save_alert_state(alerts_state_file: str, alert_state: dict[str, object]) -> None:
+def save_alert_state(alerts_state_file: str, alert_state: AlertState) -> None:
     """
     Save the alert state to DB and legacy JSON.
 

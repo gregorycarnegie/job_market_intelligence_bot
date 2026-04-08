@@ -1,6 +1,12 @@
 import abc
+import re
 from collections.abc import Mapping
 from dataclasses import dataclass
+from typing import Any, TypedDict
+
+PatternEntry = tuple[str, re.Pattern[str]]
+
+FeedState = dict[str, dict[str, float]]
 
 
 @dataclass
@@ -81,3 +87,61 @@ class Source(abc.ABC):
             A list of JobLead objects.
         """
         pass
+
+
+class AlertState(TypedDict):
+    """Persistent state for the Telegram alert queue and delivery history."""
+
+    alerted_links: list[str]
+    pending_alerts: list[dict[str, object]]
+    last_run_utc: str
+    last_delivery_utc: str
+    last_delivery_error: str
+
+
+class SeenJobsState(TypedDict):
+    """Persistent state tracking which job fingerprints have already been reviewed."""
+
+    reviewed_fingerprints: list[str]
+    last_run_utc: str
+
+
+class ApplicationsState(TypedDict):
+    """Persistent state for application records and digest/feedback metadata."""
+
+    applications: list[dict[str, object]]
+    last_updated_utc: str
+    last_digest_utc: str
+    last_digest_date_utc: str
+    last_digest_error: str
+    last_feedback_utc: str
+    last_cleanup_utc: str
+
+
+class ResumeProfile(TypedDict):
+    """Pre-processed resume data with compiled pattern entries for matching."""
+
+    resume: dict[str, object]
+    candidate_name: str
+    candidate_title: str
+    resume_summary: str
+    prefs: dict[str, object]
+    preferred_locations: list[str]
+    target_role_entries: list[PatternEntry]
+    skill_entries: list[PatternEntry]
+    competency_entries: list[PatternEntry]
+    experience_entries: list[dict[str, str]]
+
+
+class SearchConfig(TypedDict):
+    """Processed job-search configuration with compiled company-control pattern entries."""
+
+    company_whitelist: list[str]
+    company_blacklist: list[str]
+    priority_companies: list[str]
+    company_whitelist_entries: list[PatternEntry]
+    company_blacklist_entries: list[PatternEntry]
+    priority_company_entries: list[PatternEntry]
+    role_profiles: list[dict[str, object]]
+    daily_digest: dict[str, Any]
+    feedback: dict[str, Any]

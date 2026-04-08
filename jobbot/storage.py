@@ -5,7 +5,9 @@ import shutil
 import sqlite3
 from collections.abc import Sequence
 from pathlib import Path
-from typing import Any, cast
+from typing import cast
+
+from jobbot.models import AlertState, ApplicationsState, FeedState, SeenJobsState
 
 CSV_HEADERS = [
     "time",
@@ -415,7 +417,7 @@ def export_jobs_to_csv(db_file: str, csv_file: str) -> None:
         writer.writerows(rows)
 
 
-def load_feed_state(db_file: str) -> dict[str, dict[str, Any]]:
+def load_feed_state(db_file: str) -> FeedState:
     """
     Load the state of all job feeds (last checked timestamps and failure counts).
 
@@ -438,7 +440,7 @@ def load_feed_state(db_file: str) -> dict[str, dict[str, Any]]:
     }
 
 
-def save_feed_state(db_file: str, feed_state: dict[str, dict[str, Any]]) -> None:
+def save_feed_state(db_file: str, feed_state: FeedState) -> None:
     """
     Save the state of all job feeds.
 
@@ -461,7 +463,7 @@ def save_feed_state(db_file: str, feed_state: dict[str, dict[str, Any]]) -> None
         )
 
 
-def load_seen_jobs_state(db_file: str) -> dict[str, object]:
+def load_seen_jobs_state(db_file: str) -> SeenJobsState:
     """
     Load the state of seen jobs and reviewed fingerprints.
 
@@ -561,7 +563,7 @@ def append_reviewed_fingerprints(db_file: str, fingerprints: list[str], max_item
             )
 
 
-def save_seen_jobs_state(db_file: str, seen_jobs_state: dict[str, object]) -> None:
+def save_seen_jobs_state(db_file: str, seen_jobs_state: SeenJobsState) -> None:
     """
     Bulk save the seen jobs state, replacing existing data.
 
@@ -569,7 +571,7 @@ def save_seen_jobs_state(db_file: str, seen_jobs_state: dict[str, object]) -> No
         db_file: Path to the database.
         seen_jobs_state: State dictionary to save.
     """
-    fingerprints = cast(list[object], seen_jobs_state.get("reviewed_fingerprints", []))
+    fingerprints = seen_jobs_state["reviewed_fingerprints"]
     with contextlib.closing(_connect(db_file)) as connection, connection:
         connection.execute("DELETE FROM reviewed_fingerprints")
         connection.executemany(
@@ -617,7 +619,7 @@ def load_alert_state(db_file: str) -> dict[str, object]:
     }
 
 
-def save_alert_state(db_file: str, alert_state: dict[str, object]) -> None:
+def save_alert_state(db_file: str, alert_state: AlertState) -> None:
     """
     Bulk save the alert state, replacing existing data.
 
@@ -625,8 +627,8 @@ def save_alert_state(db_file: str, alert_state: dict[str, object]) -> None:
         db_file: Path to the database.
         alert_state: State dictionary to save.
     """
-    alerted_links = cast(list[object], alert_state.get("alerted_links", []))
-    pending_alerts = cast(list[object], alert_state.get("pending_alerts", []))
+    alerted_links = alert_state["alerted_links"]
+    pending_alerts = alert_state["pending_alerts"]
     with contextlib.closing(_connect(db_file)) as connection, connection:
         connection.execute("DELETE FROM alerted_links")
         connection.executemany(
@@ -657,7 +659,7 @@ def save_alert_state(db_file: str, alert_state: dict[str, object]) -> None:
         )
 
 
-def load_applications_state(db_file: str) -> dict[str, object]:
+def load_applications_state(db_file: str) -> ApplicationsState:
     """
     Load all application records and associated metadata.
 
@@ -785,7 +787,7 @@ def save_application_record(
         _index_application(connection, application)
 
 
-def save_applications_state(db_file: str, applications_state: dict[str, object]) -> None:
+def save_applications_state(db_file: str, applications_state: ApplicationsState) -> None:
     """
     Bulk save the entire applications state and rebuild all indexes.
 
@@ -793,7 +795,7 @@ def save_applications_state(db_file: str, applications_state: dict[str, object])
         db_file: Path to the database.
         applications_state: State dictionary to save.
     """
-    applications = cast(list[object], applications_state.get("applications", []))
+    applications = applications_state["applications"]
     with contextlib.closing(_connect(db_file)) as connection, connection:
         connection.execute("DELETE FROM applications")
         connection.execute("DELETE FROM application_links")
