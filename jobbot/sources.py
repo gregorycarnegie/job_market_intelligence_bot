@@ -1,3 +1,4 @@
+# pylint: disable=too-many-lines
 import base64
 import html
 import http.client
@@ -6,10 +7,10 @@ import logging
 import os
 import re
 import time
-from unittest import mock as _mock
 from collections.abc import Mapping
 from pathlib import Path
 from typing import cast
+from unittest import mock as _mock
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode, urljoin, urlsplit
 from urllib.request import Request, urlopen

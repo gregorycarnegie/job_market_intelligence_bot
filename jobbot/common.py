@@ -1,3 +1,4 @@
+# pylint: disable=too-many-lines
 import html
 import json
 import logging
@@ -22,18 +23,6 @@ from jobbot.models import (
 
 logger = logging.getLogger(__name__)
 
-CSV_HEADERS = [
-    "time",
-    "title",
-    "company",
-    "location",
-    "salary",
-    "source",
-    "employment_type",
-    "date_posted",
-    "description",
-    "link",
-]
 STATE_DB_FILE = "jobbot_state.sqlite3"
 FETCH_TIMEOUT_SECONDS = 20
 USER_AGENT = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36"
