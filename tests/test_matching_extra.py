@@ -6,6 +6,7 @@ from jobbot import matching
 from jobbot.common import (
     fresh_applications_state,
 )
+from jobbot.models import AlertState, SearchConfig
 
 
 class NormalizeCurrencyTokenTestCase(unittest.TestCase):
@@ -140,13 +141,19 @@ class FormatSalaryInfoForReasonTestCase(unittest.TestCase):
 
 
 class EvaluateCompanyPreferencesTestCase(unittest.TestCase):
-    def _config(self, **kwargs) -> dict:
+    def _config(self, **kwargs) -> SearchConfig:
         from jobbot.common import build_pattern_entries
 
         return {
+            "company_whitelist": [],
+            "company_blacklist": [],
+            "priority_companies": [],
             "company_blacklist_entries": build_pattern_entries(kwargs.get("blacklist", [])),
             "priority_company_entries": build_pattern_entries(kwargs.get("priority", [])),
             "company_whitelist_entries": build_pattern_entries(kwargs.get("whitelist", [])),
+            "role_profiles": [],
+            "daily_digest": {},
+            "feedback": {},
         }
 
     def test_empty_company_always_qualifies(self) -> None:
@@ -258,9 +265,12 @@ class FormatAlertMessageTestCase(unittest.TestCase):
 
 class QueuePendingAlertsTestCase(unittest.TestCase):
     def test_queues_new_alerts(self) -> None:
-        alert_state: dict[str, object] = {
+        alert_state: AlertState = {
             "pending_alerts": [],
             "alerted_links": [],
+            "last_run_utc": "",
+            "last_delivery_utc": "",
+            "last_delivery_error": "",
         }
         matches = [
             {
@@ -281,9 +291,12 @@ class QueuePendingAlertsTestCase(unittest.TestCase):
         self.assertEqual(len(cast(list[object], alert_state["pending_alerts"])), 1)
 
     def test_does_not_queue_already_alerted(self) -> None:
-        alert_state: dict[str, object] = {
+        alert_state: AlertState = {
             "pending_alerts": [],
             "alerted_links": ["https://example.com/job/1"],
+            "last_run_utc": "",
+            "last_delivery_utc": "",
+            "last_delivery_error": "",
         }
         matches = [
             {
@@ -315,9 +328,12 @@ class QueuePendingAlertsTestCase(unittest.TestCase):
             "company_control": "none",
             "role_profile": "",
         }
-        alert_state: dict[str, object] = {
+        alert_state: AlertState = {
             "pending_alerts": [existing],
             "alerted_links": [],
+            "last_run_utc": "",
+            "last_delivery_utc": "",
+            "last_delivery_error": "",
         }
         queued = matching.queue_pending_alerts(alert_state, [existing])
         self.assertEqual(queued, 0)
@@ -325,9 +341,11 @@ class QueuePendingAlertsTestCase(unittest.TestCase):
 
 class DeliverPendingAlertsTestCase(unittest.TestCase):
     def test_returns_zero_when_no_pending(self) -> None:
-        alert_state: dict[str, object] = {
+        alert_state: AlertState = {
             "pending_alerts": [],
             "alerted_links": [],
+            "last_run_utc": "",
+            "last_delivery_utc": "",
             "last_delivery_error": "old error",
         }
         count, error = matching.deliver_pending_alerts(alert_state, "2026-04-04T10:00:00Z")
@@ -336,9 +354,12 @@ class DeliverPendingAlertsTestCase(unittest.TestCase):
         self.assertEqual(alert_state["last_delivery_error"], "")
 
     def test_returns_error_when_credentials_missing(self) -> None:
-        alert_state: dict[str, object] = {
+        alert_state: AlertState = {
             "pending_alerts": [{"link": "https://example.com/job/1", "title": "X", "score": 50, "reasons": []}],
             "alerted_links": [],
+            "last_run_utc": "",
+            "last_delivery_utc": "",
+            "last_delivery_error": "",
         }
         with mock.patch.object(matching, "load_telegram_settings", return_value=("", "", "")):
             count, error = matching.deliver_pending_alerts(alert_state, "2026-04-04T10:00:00Z")
@@ -346,7 +367,7 @@ class DeliverPendingAlertsTestCase(unittest.TestCase):
         self.assertIn("Telegram credentials not configured", error)
 
     def test_sends_alerts_and_clears_pending(self) -> None:
-        alert_state: dict[str, object] = {
+        alert_state: AlertState = {
             "pending_alerts": [
                 {
                     "link": "https://example.com/job/1",
@@ -361,6 +382,9 @@ class DeliverPendingAlertsTestCase(unittest.TestCase):
                 }
             ],
             "alerted_links": [],
+            "last_run_utc": "",
+            "last_delivery_utc": "",
+            "last_delivery_error": "",
         }
         with (
             mock.patch.object(matching, "load_telegram_settings", return_value=("token", "chat", "")),
@@ -374,7 +398,7 @@ class DeliverPendingAlertsTestCase(unittest.TestCase):
         self.assertIn("https://example.com/job/1", cast(list[str], alert_state["alerted_links"]))
 
     def test_stops_on_send_failure(self) -> None:
-        alert_state: dict[str, object] = {
+        alert_state: AlertState = {
             "pending_alerts": [
                 {
                     "link": "https://example.com/job/1",
@@ -400,6 +424,9 @@ class DeliverPendingAlertsTestCase(unittest.TestCase):
                 },
             ],
             "alerted_links": [],
+            "last_run_utc": "",
+            "last_delivery_utc": "",
+            "last_delivery_error": "",
         }
         with (
             mock.patch.object(matching, "load_telegram_settings", return_value=("token", "chat", "")),
@@ -497,7 +524,7 @@ class FormatDailyDigestMessagesTestCase(unittest.TestCase):
 
 class SeedApplicationsFromExistingJobsTestCase(unittest.TestCase):
     def test_seeds_when_state_empty(self) -> None:
-        state = cast(dict[str, Any], fresh_applications_state())
+        state = fresh_applications_state()
         jobs = [
             {
                 "time": "2026-04-04T10:00:00Z",
@@ -511,7 +538,7 @@ class SeedApplicationsFromExistingJobsTestCase(unittest.TestCase):
         self.assertEqual(len(state["applications"]), 1)
 
     def test_does_not_seed_when_applications_exist(self) -> None:
-        state = cast(dict[str, Any], fresh_applications_state())
+        state = fresh_applications_state()
         state["applications"] = [{"title": "Existing", "link": "https://example.com/old"}]
         jobs = [{"time": "", "title": "New", "description": "", "link": "https://example.com/new"}]
         created = matching.seed_applications_from_existing_jobs(state, jobs)
@@ -519,7 +546,7 @@ class SeedApplicationsFromExistingJobsTestCase(unittest.TestCase):
         self.assertEqual(len(state["applications"]), 1)
 
     def test_does_not_seed_when_no_jobs(self) -> None:
-        state = cast(dict[str, Any], fresh_applications_state())
+        state = fresh_applications_state()
         created = matching.seed_applications_from_existing_jobs(state, [])
         self.assertEqual(created, 0)
 
@@ -610,7 +637,7 @@ class NormalizeApplicationRecordTestCase(unittest.TestCase):
 
 class SyncApplicationOutcomesTestCase(unittest.TestCase):
     def test_sets_applied_at_utc_for_applied_status(self) -> None:
-        state = cast(dict[str, Any], fresh_applications_state())
+        state = fresh_applications_state()
         state["applications"] = [
             {
                 "title": "Role",
@@ -624,7 +651,7 @@ class SyncApplicationOutcomesTestCase(unittest.TestCase):
         self.assertTrue(app.get("applied_at_utc"))
 
     def test_sets_interviewed_at_utc_for_interview_status(self) -> None:
-        state = cast(dict[str, Any], fresh_applications_state())
+        state = fresh_applications_state()
         state["applications"] = [
             {
                 "title": "Role",
@@ -638,7 +665,7 @@ class SyncApplicationOutcomesTestCase(unittest.TestCase):
         self.assertTrue(app.get("interviewed_at_utc"))
 
     def test_sets_rejected_at_utc_for_rejected_status(self) -> None:
-        state = cast(dict[str, Any], fresh_applications_state())
+        state = fresh_applications_state()
         state["applications"] = [
             {
                 "title": "Role",

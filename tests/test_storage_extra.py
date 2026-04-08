@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any, cast
 
 from jobbot import storage as jobbot_storage
+from jobbot.models import AlertState
 
 
 class StorageTestBase(unittest.TestCase):
@@ -69,7 +70,7 @@ class FeedStateTestCase(StorageTestBase):
 
 class AlertStateTestCase(StorageTestBase):
     def test_save_and_load_alert_state(self) -> None:
-        state = {
+        state: AlertState = {
             "alerted_links": ["https://example.com/job/1"],
             "pending_alerts": [
                 {

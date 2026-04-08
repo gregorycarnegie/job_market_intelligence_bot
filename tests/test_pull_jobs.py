@@ -12,7 +12,7 @@ import pull_jobs
 from jobbot import storage as jobbot_storage
 from jobbot.common import fresh_applications_state
 from jobbot.matching import normalize_application_record, process_telegram_callback_updates, upsert_application_record
-from jobbot.models import JobLead
+from jobbot.models import JobLead, SearchConfig
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 RESUME_PATH = REPO_ROOT / "resume.json"
@@ -39,7 +39,7 @@ class PullJobsTestCase(unittest.TestCase):
         pull_jobs.RESUME_FILE = self.original_resume_file
         pull_jobs.JOB_SEARCH_CONFIG_FILE = self.original_job_search_config_file
 
-    def write_search_config(self, payload: dict) -> dict[str, object]:
+    def write_search_config(self, payload: dict) -> SearchConfig:
         Path("job_search_config.json").write_text(json.dumps(payload), encoding="utf-8")
         return pull_jobs.load_job_search_config()
 
@@ -125,7 +125,7 @@ class PullJobsTestCase(unittest.TestCase):
         self.assertIn("blacklisted employer", " ".join(cast(list[str], evaluation["reasons"])))
 
     def test_upsert_application_record_merges_duplicate_matches(self) -> None:
-        state = cast(dict[str, Any], fresh_applications_state())
+        state = fresh_applications_state()
         first_payload = {
             "title": "IT Support Engineer at Monzo",
             "description": "London hybrid Active Directory and Microsoft 365 support role.",
@@ -163,9 +163,9 @@ class PullJobsTestCase(unittest.TestCase):
         self.assertEqual(application["status"], "reviewed")
         self.assertEqual(application["notes"], "Manual note")
         self.assertEqual(application["best_score"], 64)
-        self.assertEqual(len(application["links"]), 2)
-        self.assertGreaterEqual(application["match_count"], 2)
-        self.assertIn("hardware support", application["feedback_keywords"])
+        self.assertEqual(len(cast(list[object], application["links"])), 2)
+        self.assertGreaterEqual(cast(int, application["match_count"]), 2)
+        self.assertIn("hardware support", cast(list[str], application["feedback_keywords"]))
 
     def test_sqlite_review_and_application_helpers(self) -> None:
         jobbot_storage.append_reviewed_fingerprints(
@@ -234,8 +234,8 @@ class PullJobsTestCase(unittest.TestCase):
                 }
             }
         )
-        applications_state = cast(dict[str, Any], fresh_applications_state())
-        applications_state["applications"] = [
+        applications_state = fresh_applications_state()
+        _raw_apps = [
             normalize_application_record(
                 {
                     "title": "IT Support Engineer at Good Co",
@@ -283,7 +283,7 @@ class PullJobsTestCase(unittest.TestCase):
                 }
             ),
         ]
-        applications_state["applications"] = [app for app in applications_state["applications"] if app]
+        applications_state["applications"] = [app for app in _raw_apps if app is not None]
 
         pull_jobs.sync_application_outcomes(applications_state, "2026-04-04T10:00:00Z")
         cleanup = pull_jobs.prune_applications_state(applications_state, search_config, "2026-04-04T10:00:00Z")
@@ -379,8 +379,8 @@ class PullJobsTestCase(unittest.TestCase):
                 "feedback": {"enabled": False},
             }
         )
-        applications_state = cast(dict[str, Any], fresh_applications_state())
-        applications_state["applications"] = [
+        applications_state = fresh_applications_state()
+        _raw_digest_apps = [
             normalize_application_record(
                 {
                     "title": f"IT Support Engineer {index} at Monzo",
@@ -398,7 +398,7 @@ class PullJobsTestCase(unittest.TestCase):
             )
             for index in range(1, 6)
         ]
-        applications_state["applications"] = [app for app in applications_state["applications"] if app]
+        applications_state["applications"] = [app for app in _raw_digest_apps if app is not None]
         snapshot = pull_jobs.build_daily_digest_snapshot(
             "2026-04-04T10:00:00Z",
             applications_state,
