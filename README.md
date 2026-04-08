@@ -2,6 +2,7 @@
 
 [![CI](https://github.com/gregorycarnegie/job_market_intelligence_bot/actions/workflows/ci.yml/badge.svg)](https://github.com/gregorycarnegie/job_market_intelligence_bot/actions/workflows/ci.yml)
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue?logo=python&logoColor=white)](https://www.python.org/)
+[![Shell](https://img.shields.io/badge/shell-bash-89e051?logo=gnubash&logoColor=white)](https://www.gnu.org/software/bash/)
 
 Automated Search for Job Listings in RSS Feeds with self-hosted OpenClaw running on VPS. Offloading all the heavy complex logic to Python (running on OS, without wasting OpenClaw credits) and sharing bare minimum information with OpenClaw, only what's absolutely necessary for its decision making process.
 
@@ -40,19 +41,19 @@ This repository contains several files, part of the job market intelligence mech
 
 All persistent state lives in `jobbot_state.sqlite3` (the authoritative store). The JSON files below are **read-only snapshots** written by `pull_jobs.py` after each run for human inspection or optional AI handoff. Deleting any JSON snapshot is safe — it will be regenerated on the next run. The SQLite database should not be deleted unless you want to reset all history.
 
-| File | Purpose | Safe to delete? |
-| --- | --- | --- |
-| `jobbot_state.sqlite3` | Primary database: matched jobs, review history, alerts, applications, feed state, Telegram sessions. | No — this is the source of truth |
-| `matches.json` | Latest-run snapshot of all scored matches above the threshold. Replaced on every run. | Yes |
-| `desc.json` | Most recent matched batch staged for OpenClaw review. Replaced on every run. | Yes |
-| `seen_jobs_state.json` | Legacy flat-file mirror of reviewed fingerprints. Kept for backwards compatibility; SQLite is authoritative. | Yes |
-| `alerts_state.json` | Legacy flat-file mirror of alert queue and delivery history. SQLite is authoritative. | Yes |
-| `applications.json` | Legacy flat-file mirror of application records. SQLite is authoritative. | Yes |
-| `feed_state.json` | Legacy flat-file mirror of per-feed poll timestamps. SQLite is authoritative. | Yes |
-| `daily_digest.json` | Latest daily digest snapshot sent to Telegram. Replaced each digest cycle. | Yes |
-| `application_briefs.json` | Application-ready jobs with generated fit notes, resume bullets, and intro drafts. Replaced on each run. | Yes |
-| `borderline_matches.json` | Near-threshold jobs for optional AI review. Replaced on each run. | Yes |
-| `feedback_metrics.json` | Outcome tracking and learned source/keyword score adjustments. Replaced on each run. | Yes |
+| File                      | Purpose                                                                                                      | Safe to delete?                  |
+|---------------------------|--------------------------------------------------------------------------------------------------------------|----------------------------------|
+| `jobbot_state.sqlite3`    | Primary database: matched jobs, review history, alerts, applications, feed state, Telegram sessions.         | No — this is the source of truth |
+| `matches.json`            | Latest-run snapshot of all scored matches above the threshold. Replaced on every run.                        | Yes                              |
+| `desc.json`               | Most recent matched batch staged for OpenClaw review. Replaced on every run.                                 | Yes                              |
+| `seen_jobs_state.json`    | Legacy flat-file mirror of reviewed fingerprints. Kept for backwards compatibility; SQLite is authoritative. | Yes                              |
+| `alerts_state.json`       | Legacy flat-file mirror of alert queue and delivery history. SQLite is authoritative.                        | Yes                              |
+| `applications.json`       | Legacy flat-file mirror of application records. SQLite is authoritative.                                     | Yes                              |
+| `feed_state.json`         | Legacy flat-file mirror of per-feed poll timestamps. SQLite is authoritative.                                | Yes                              |
+| `daily_digest.json`       | Latest daily digest snapshot sent to Telegram. Replaced each digest cycle.                                   | Yes                              |
+| `application_briefs.json` | Application-ready jobs with generated fit notes, resume bullets, and intro drafts. Replaced on each run.     | Yes                              |
+| `borderline_matches.json` | Near-threshold jobs for optional AI review. Replaced on each run.                                            | Yes                              |
+| `feedback_metrics.json`   | Outcome tracking and learned source/keyword score adjustments. Replaced on each run.                         | Yes                              |
 
 ## 🧰 Requirements
 
@@ -72,7 +73,7 @@ Please follow these instructions, and if you get stuck - check out the video tut
 
 Adjust resume.json to your own information. This will give OpenClaw plenty of background about your skills, experience and requirements.
 
-Special fields to update (do not remove! they are used in the python scripts):
+Special fields to update (do not remove! they are used in the Python scripts):
 
 - `location` - city, country
 - `target_roles`
@@ -244,7 +245,7 @@ Supported controls:
 The tailoring layer is now generated in Python:
 
 - `why_this_fits` gives a fast explanation for why the job lines up with your target path.
-- `resume_bullet_suggestions` reuses the most relevant existing highlights from your resume for that specific role.
+- `resume_bullet_suggestions` reuses the most relevant existing highlights from your résumé for that specific role.
 - `intro_message` gives you a short application-ready note you can refine before sending.
 
 The feedback layer is also generated in Python:
@@ -267,7 +268,7 @@ python3 -m unittest discover -s tests -v
 What is covered right now:
 
 - scoring and generated application materials
-- blacklist / shortlist behavior
+- blacklist / shortlist behaviour
 - application-state upserts and dedupe
 - feedback learning and stale-record pruning
 - end-to-end `pull_jobs.main()` orchestration with temp runtime files
