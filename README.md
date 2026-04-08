@@ -107,20 +107,20 @@ Once WhatsApp is connected, try sending a message to yourself (your own phone nu
 First, we must find the location of our OpenClaw workspace. For this, send the following prompt:
 
 ```text
-Save this python file as mariyas_test.py: `print("yo yo yo")`
+Save this python file as gregs_test.py: `print("yo yo yo")`
 ```
 
 And then in your terminal, type (just replace `@72.60.178.132` with the address of your server):
 
 ```bash
 ssh root@72.60.178.132
-find / -name "mariyas_test.py"
+find / -name "gregs_test.py"
 ```
 
 This will show you the exact location of your file - which would be the workspace we're looking for. In my case:
 
 ```bash
-/docker/openclaw-laek/data/.openclaw/workspace/mariyas_test.py
+/docker/openclaw-laek/data/.openclaw/workspace/gregs_test.py
 ```
 
 Navigate there with cd:
