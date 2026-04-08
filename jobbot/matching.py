@@ -10,7 +10,7 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
-import jobbot.storage as storage
+from jobbot import storage
 from jobbot.common import (
     APPLICATION_READY_SCORE,
     APPLICATION_STATUSES,
@@ -161,7 +161,7 @@ def normalize_application_record(payload: Mapping[str, object]) -> dict[str, obj
     }
 
 
-def load_applications_state(applications_file: str) -> ApplicationsState:
+def load_applications_state(_applications_file: str) -> ApplicationsState:
     """
     Load the applications state from the database, normalizing and deduping records.
 
@@ -632,7 +632,7 @@ def select_resume_evidence(profile: ResumeProfile, focus_phrases: list[str], lim
     return fallback_entries[:limit]
 
 
-def build_why_this_fits_notes(
+def build_why_this_fits_notes(  # pylint: disable=too-many-positional-arguments
     company_name: str,
     company_preferences: dict[str, object],
     role_profile_match: dict[str, object],
@@ -756,7 +756,7 @@ def build_intro_message(
     return " ".join(lines)
 
 
-def build_application_materials(
+def build_application_materials(  # pylint: disable=too-many-positional-arguments
     profile: ResumeProfile,
     role_title: str,
     company_name: str,
@@ -1022,7 +1022,7 @@ def _apply_role_profile_score(
     return 0, {"name": "", "display_name": "", "score_delta": 0, "title_matches": [], "description_matches": []}
 
 
-def _build_candidate_record(
+def _build_candidate_record(  # pylint: disable=too-many-positional-arguments
     item: JobLead,
     source_label: str,
     raw_title: str,
@@ -1076,7 +1076,7 @@ def _build_candidate_record(
     }
 
 
-def score_job(
+def score_job(  # pylint: disable=too-many-positional-arguments
     item: JobLead,
     source_label: str,
     profile: ResumeProfile,
@@ -2308,7 +2308,7 @@ def _ack_callback(callback_query_id: str, token: str, text: str = "", show_alert
         answer_telegram_callback_query(callback_query_id, token, text, show_alert)
 
 
-def process_telegram_callback_updates(timeout: int = 0, limit: int = 20) -> tuple[int, str]:
+def process_telegram_callback_updates(timeout: int = 0, limit: int = 20) -> tuple[int, str]:  # pylint: disable=too-many-branches,too-many-statements
     """
     Poll for Telegram updates and handle digest pagination callbacks.
 
@@ -2401,7 +2401,7 @@ def process_telegram_callback_updates(timeout: int = 0, limit: int = 20) -> tupl
     return handled_count, last_error
 
 
-def maybe_send_daily_digest(
+def maybe_send_daily_digest(  # pylint: disable=too-many-return-statements
     applications_state: ApplicationsState,
     snapshot: dict[str, object],
     current_run_ts: str,

@@ -10,7 +10,7 @@ FeedState = dict[str, dict[str, float]]
 
 
 @dataclass
-class JobLead:
+class JobLead:  # pylint: disable=too-many-instance-attributes
     """
     Standardized data model representing a single job posting retrieved from a source.
 
@@ -86,7 +86,6 @@ class Source(abc.ABC):
         Returns:
             A list of JobLead objects.
         """
-        pass
 
 
 class AlertState(TypedDict):

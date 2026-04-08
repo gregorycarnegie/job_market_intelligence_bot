@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any, cast
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
-import jobbot.storage as storage
+from jobbot import storage
 from jobbot.models import (
     AlertState,
     ApplicationsState,
@@ -157,7 +157,7 @@ def fetch_live_currency_rates() -> None:
             rates.get("EUR", "?"),
             data.get("date", "?"),
         )
-    except Exception as exc:
+    except Exception as exc:  # pylint: disable=broad-exception-caught
         logger.warning("could not fetch live currency rates, using defaults — %s", exc)
 
 
@@ -1201,7 +1201,7 @@ def atomic_write_json(path: Path, payload: object) -> None:
     temp_path.replace(path)
 
 
-def load_feed_state(feed_state_file: str) -> FeedState:
+def load_feed_state(_feed_state_file: str) -> FeedState:
     """
     Load the feed check state (legacy wrapper for storage.load_feed_state).
 
@@ -1284,7 +1284,7 @@ def append_rows(csv_file: str, rows: list[dict[str, str]]) -> None:
     storage.export_jobs_to_csv(STATE_DB_FILE, csv_file)
 
 
-def load_seen_jobs_state(seen_jobs_state_file: str) -> SeenJobsState:
+def load_seen_jobs_state(_seen_jobs_state_file: str) -> SeenJobsState:
     """
     Load the seen jobs tracker state, enforcing size limits on reviewed fingerprints.
 
@@ -1347,7 +1347,7 @@ def normalize_pending_alert(payload: dict[str, object]) -> dict[str, object] | N
     }
 
 
-def load_alert_state(alerts_state_file: str) -> AlertState:
+def load_alert_state(_alerts_state_file: str) -> AlertState:
     """
     Load and normalize the alert state, enforcing history limits.
 

@@ -373,7 +373,7 @@ def append_jobs(db_file: str, rows: list[dict[str, str]]) -> None:
     if not rows:
         return
 
-    with contextlib.closing(_connect(db_file)) as connection, connection:
+    with contextlib.closing(_connect(db_file)) as connection, connection:  # pylint: disable=confusing-with-statement
         connection.executemany(
             """
                 INSERT OR IGNORE INTO jobs(
@@ -448,7 +448,7 @@ def save_feed_state(db_file: str, feed_state: FeedState) -> None:
         db_file: Path to the database.
         feed_state: Dictionary of feed states.
     """
-    with contextlib.closing(_connect(db_file)) as connection, connection:
+    with contextlib.closing(_connect(db_file)) as connection, connection:  # pylint: disable=confusing-with-statement
         connection.execute("DELETE FROM feed_state")
         connection.executemany(
             "INSERT INTO feed_state(name, last_checked_at, consecutive_failures) VALUES (?, ?, ?)",
@@ -536,7 +536,7 @@ def append_reviewed_fingerprints(db_file: str, fingerprints: list[str], max_item
     candidates = _dedupe_values(fingerprints)
     if not candidates:
         return
-    with contextlib.closing(_connect(db_file)) as connection, connection:
+    with contextlib.closing(_connect(db_file)) as connection, connection:  # pylint: disable=confusing-with-statement
         position = _next_position(connection, "reviewed_fingerprints")
         for fingerprint in candidates:
             connection.execute(
@@ -572,7 +572,7 @@ def save_seen_jobs_state(db_file: str, seen_jobs_state: SeenJobsState) -> None:
         seen_jobs_state: State dictionary to save.
     """
     fingerprints = seen_jobs_state["reviewed_fingerprints"]
-    with contextlib.closing(_connect(db_file)) as connection, connection:
+    with contextlib.closing(_connect(db_file)) as connection, connection:  # pylint: disable=confusing-with-statement
         connection.execute("DELETE FROM reviewed_fingerprints")
         connection.executemany(
             "INSERT INTO reviewed_fingerprints(position, fingerprint) VALUES (?, ?)",
@@ -629,7 +629,7 @@ def save_alert_state(db_file: str, alert_state: AlertState) -> None:
     """
     alerted_links = alert_state["alerted_links"]
     pending_alerts = alert_state["pending_alerts"]
-    with contextlib.closing(_connect(db_file)) as connection, connection:
+    with contextlib.closing(_connect(db_file)) as connection, connection:  # pylint: disable=confusing-with-statement
         connection.execute("DELETE FROM alerted_links")
         connection.executemany(
             "INSERT INTO alerted_links(position, link) VALUES (?, ?)",
@@ -759,7 +759,7 @@ def save_application_record(
     if not application_link:
         return
 
-    with contextlib.closing(_connect(db_file)) as connection, connection:
+    with contextlib.closing(_connect(db_file)) as connection, connection:  # pylint: disable=confusing-with-statement
         row = None
         if previous_link:
             row = connection.execute(
@@ -796,7 +796,7 @@ def save_applications_state(db_file: str, applications_state: ApplicationsState)
         applications_state: State dictionary to save.
     """
     applications = applications_state["applications"]
-    with contextlib.closing(_connect(db_file)) as connection, connection:
+    with contextlib.closing(_connect(db_file)) as connection, connection:  # pylint: disable=confusing-with-statement
         connection.execute("DELETE FROM applications")
         connection.execute("DELETE FROM application_links")
         connection.execute("DELETE FROM application_fingerprints")
@@ -855,7 +855,7 @@ def save_telegram_update_offset(db_file: str, offset: int) -> None:
         db_file: Path to the database.
         offset: The update ID to save.
     """
-    with contextlib.closing(_connect(db_file)) as connection, connection:
+    with contextlib.closing(_connect(db_file)) as connection, connection:  # pylint: disable=confusing-with-statement
         connection.execute(
             "INSERT OR REPLACE INTO state_metadata(scope, key, value) VALUES ('telegram', 'update_offset', ?)",
             (str(max(0, int(offset))),),
@@ -879,7 +879,7 @@ def save_telegram_digest_session(
         pages: List of formatted message pages.
         keep_latest: Max number of history sessions to retain.
     """
-    with contextlib.closing(_connect(db_file)) as connection, connection:
+    with contextlib.closing(_connect(db_file)) as connection, connection:  # pylint: disable=confusing-with-statement
         connection.execute(
             """
                 INSERT OR REPLACE INTO telegram_digest_sessions(session_id, created_at, pages_json)

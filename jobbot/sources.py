@@ -6,6 +6,7 @@ import logging
 import os
 import re
 import time
+from unittest import mock as _mock
 from collections.abc import Mapping
 from pathlib import Path
 from typing import cast
@@ -879,7 +880,8 @@ class EfcHtmlSource(Source):
         html_text = fetch_feed(str(source.get("url", "")))
         display_name = str(source.get("display_name", "") or source.get("name", ""))
         pattern = re.compile(
-            r"""href=["'](?P<link>(?:https://www\.efinancialcareers\.com)?/(?:jobs-[^"'?#]+?id\d+))["'][^>]*>(?P<title>.*?)</a>""",
+            r"""href=["'](?P<link>(?:https://www\.efinancialcareers\.com)?"""
+            r"""/(?:jobs-[^"'?#]+?id\d+))["'][^>]*>(?P<title>.*?)</a>""",
             re.IGNORECASE | re.DOTALL,
         )
         items = []
@@ -1611,7 +1613,7 @@ class RemotiveSource(Source):
         return items
 
 
-def create_source(source_config: dict[str, object]) -> Source:
+def create_source(source_config: dict[str, object]) -> Source:  # pylint: disable=too-many-return-statements
     """
     Factory function to create the appropriate Source instance for a config.
 
@@ -1696,8 +1698,6 @@ def parse_efinancialcareers_html(html_text: str, source: Mapping[str, object]) -
     cfg = {"url": "", "display_name": "", "name": "", **source}
     src = EfcHtmlSource(cfg)
     # Monkeypatch fetch to return the supplied html_text directly
-    import unittest.mock as _mock
-
     with _mock.patch("jobbot.sources.fetch_feed", return_value=html_text):
         return src.fetch()
 
