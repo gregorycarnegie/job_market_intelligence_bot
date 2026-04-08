@@ -1,7 +1,7 @@
 # job_market_intelligence_bot
 
 [![CI](https://github.com/gregorycarnegie/job_market_intelligence_bot/actions/workflows/ci.yml/badge.svg)](https://github.com/gregorycarnegie/job_market_intelligence_bot/actions/workflows/ci.yml)
-[![codecov](https://codecov.io/gh/gregorycarnegie/job_market_intelligence_bot/branch/master/graph/badge.svg)](https://codecov.io/gh/gregorycarnegie/job_market_intelligence_bot)
+[![Python](https://img.shields.io/badge/python-3.10%2B-blue?logo=python&logoColor=white)](https://www.python.org/)
 
 Automated Search for Job Listings in RSS Feeds with self-hosted OpenClaw running on VPS. Offloading all the heavy complex logic to Python (running on OS, without wasting OpenClaw credits) and sharing bare minimum information with OpenClaw, only what's absolutely necessary for its decision making process.
 
@@ -120,13 +120,13 @@ find / -name "gregs_test.py"
 This will show you the exact location of your file - which would be the workspace we're looking for. In my case:
 
 ```bash
-/docker/openclaw-laek/data/.openclaw/workspace/gregs_test.py
+/docker/<docker_container_name>/data/.openclaw/workspace/gregs_test.py
 ```
 
 Navigate there with cd:
 
 ```bash
-cd /docker/openclaw-laek/data/.openclaw/workspace
+cd /docker/<docker_container_name>/data/.openclaw/workspace
 ```
 
 ### 5. Copy Repository Files to VPS 📂
@@ -143,7 +143,8 @@ cd job_market_intelligence_bot
 - copy files from your local directory into your remote server:
 
 ```bash
-scp pull_jobs.py pull_desc.py telegram_callback_worker.py exec_loop.sh resume.json .env.example company_boards.json.example job_search_config.json.example root@72.60.178.132:/docker/openclaw-cevb/data/.openclaw/workspace/
+scp pull_jobs.py pull_desc.py telegram_callback_worker.py exec_loop.sh resume.json .env root@72.60.178.132:/docker/<docker_container_name>/data/.openclaw/workspace/automations/job_finder/
+scp -r jobbot root@72.60.178.132:/docker/<docker_container_name>/data/.openclaw/workspace/automations/job_finder/
 ```
 
 ### 6. Run exec_loop.sh ➿
