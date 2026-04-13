@@ -54,16 +54,11 @@ class PullDescTestCase(unittest.TestCase):
             ]
         )
 
-        latest_ts, batch = pull_desc.load_latest_csv_batch()
-        self.assertEqual(latest_ts, "2026-04-04T10:00:00Z")
-        self.assertEqual(len(batch), 2)
-        self.assertEqual(batch[0]["title"], "New role 1")
+        batch = self._assert_latest_batch(2, "New role 1")
         self.assertEqual(batch[1]["title"], "New role 2")
 
     def test_main_creates_empty_desc_when_csv_missing(self) -> None:
-        result = pull_desc.main()
-        self.assertEqual(result, 0)
-        payload = json.loads(Path("desc.json").read_text(encoding="utf-8"))
+        payload = self._run_main_and_read_desc()
         self.assertEqual(payload, [])
 
     def test_load_latest_csv_batch_reads_from_sqlite(self) -> None:
@@ -84,13 +79,17 @@ class PullDescTestCase(unittest.TestCase):
             ]
         )
 
-        latest_ts, batch = pull_desc.load_latest_csv_batch()
+        latest_ts, _batch = pull_desc.load_latest_csv_batch()
         self.assertEqual(latest_ts, "2026-04-04T10:00:00Z")
         Path("jobs.csv").write_text("time,title,description,link\n", encoding="utf-8")
-        latest_ts, batch = pull_desc.load_latest_csv_batch()
+        self._assert_latest_batch(1, "New role")
+
+    def _assert_latest_batch(self, expected_count: int, expected_first_title: str) -> list[dict[str, str]]:
+        latest_ts, result = pull_desc.load_latest_csv_batch()
         self.assertEqual(latest_ts, "2026-04-04T10:00:00Z")
-        self.assertEqual(len(batch), 1)
-        self.assertEqual(batch[0]["title"], "New role")
+        self.assertEqual(len(result), expected_count)
+        self.assertEqual(result[0]["title"], expected_first_title)
+        return result
 
     def test_main_stages_batch_when_timestamps_differ(self) -> None:
         self.seed_jobs(
@@ -103,9 +102,7 @@ class PullDescTestCase(unittest.TestCase):
                 },
             ]
         )
-        result = pull_desc.main()
-        self.assertEqual(result, 0)
-        payload = json.loads(Path("desc.json").read_text(encoding="utf-8"))
+        payload = self._run_main_and_read_desc()
         self.assertEqual(len(payload), 1)
         self.assertEqual(payload[0]["title"], "New role")
 
@@ -125,11 +122,13 @@ class PullDescTestCase(unittest.TestCase):
         # Read back to confirm it was written
         first_payload = json.loads(Path("desc.json").read_text(encoding="utf-8"))
         self.assertEqual(len(first_payload), 1)
-        # Second run: timestamps match, no-op
-        result = pull_desc.main()
-        self.assertEqual(result, 0)
-        second_payload = json.loads(Path("desc.json").read_text(encoding="utf-8"))
+        second_payload = self._run_main_and_read_desc()
         self.assertEqual(first_payload, second_payload)
+
+    def _run_main_and_read_desc(self) -> list[dict[str, str]]:
+        exit_code = pull_desc.main()
+        self.assertEqual(exit_code, 0)
+        return json.loads(Path("desc.json").read_text(encoding="utf-8"))
 
     def test_load_json_timestamp_returns_none_for_missing_file(self) -> None:
         self.assertIsNone(pull_desc.load_json_timestamp())

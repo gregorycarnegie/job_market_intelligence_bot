@@ -46,17 +46,18 @@ class CompileSkillPatternTestCase(unittest.TestCase):
         self.assertIsNone(compile_skill_pattern("   "))
 
     def test_compiled_pattern_matches_whole_word(self) -> None:
-        pattern = compile_skill_pattern("python")
-        self.assertIsNotNone(pattern)
-        assert pattern is not None
-        self.assertIsNotNone(pattern.search("knows python well"))
+        pattern = self._assert_compiled_pattern_matches("python", "knows python well")
         self.assertIsNone(pattern.search("pythonic"))
 
     def test_compiled_pattern_handles_spaces_as_flexible_whitespace(self) -> None:
-        pattern = compile_skill_pattern("active directory")
-        self.assertIsNotNone(pattern)
-        assert pattern is not None
-        self.assertIsNotNone(pattern.search("uses Active  Directory"))
+        self._assert_compiled_pattern_matches("active directory", "uses Active  Directory")
+
+    def _assert_compiled_pattern_matches(self, skill: str, text: str):
+        result = compile_skill_pattern(skill)
+        self.assertIsNotNone(result)
+        assert result is not None
+        self.assertIsNotNone(result.search(text))
+        return result
 
 
 class ParseBoolTestCase(unittest.TestCase):
@@ -121,29 +122,24 @@ class NormalizeCompanyNameTestCase(unittest.TestCase):
 
 class SplitTitleAndCompanyTestCase(unittest.TestCase):
     def test_splits_on_at(self) -> None:
-        role, company = split_title_and_company("IT Support Engineer at Monzo")
-        self.assertEqual(role, "IT Support Engineer")
-        self.assertEqual(company, "Monzo")
+        self._assert_split_title_and_company("IT Support Engineer at Monzo", "IT Support Engineer", "Monzo")
 
     def test_splits_on_pipe(self) -> None:
-        role, company = split_title_and_company("Help Desk Technician | Acme Corp")
-        self.assertEqual(role, "Help Desk Technician")
-        self.assertEqual(company, "Acme Corp")
+        self._assert_split_title_and_company("Help Desk Technician | Acme Corp", "Help Desk Technician", "Acme Corp")
 
     def test_splits_on_dash(self) -> None:
-        role, company = split_title_and_company("Systems Administrator - Contoso")
-        self.assertEqual(role, "Systems Administrator")
-        self.assertEqual(company, "Contoso")
+        self._assert_split_title_and_company("Systems Administrator - Contoso", "Systems Administrator", "Contoso")
 
     def test_no_separator_returns_full_title_and_empty_company(self) -> None:
-        role, company = split_title_and_company("IT Support Engineer")
-        self.assertEqual(role, "IT Support Engineer")
-        self.assertEqual(company, "")
+        self._assert_split_title_and_company("IT Support Engineer", "IT Support Engineer", "")
 
     def test_empty_string(self) -> None:
-        role, company = split_title_and_company("")
-        self.assertEqual(role, "")
-        self.assertEqual(company, "")
+        self._assert_split_title_and_company("", "", "")
+
+    def _assert_split_title_and_company(self, title: str, expected_role: str, expected_company: str) -> None:
+        role, company = split_title_and_company(title)
+        self.assertEqual(role, expected_role)
+        self.assertEqual(company, expected_company)
 
 
 class NormalizeLinkForFingerprintTestCase(unittest.TestCase):

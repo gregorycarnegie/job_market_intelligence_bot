@@ -75,35 +75,22 @@ def normalize_application_record(payload: Mapping[str, object]) -> dict[str, obj
         _, company = split_title_and_company(title)
     source = clean_text(str(payload.get("source", "")))
 
-    raw_fingerprints = payload.get("fingerprints", [])
-    if not isinstance(raw_fingerprints, list):
-        raw_fingerprints = [raw_fingerprints] if raw_fingerprints else []
-    fingerprints = [clean_text(str(fingerprint)) for fingerprint in raw_fingerprints if clean_text(str(fingerprint))]
+    fingerprints = _extracted_from_normalize_application_record_19(payload, "fingerprints")
     if not fingerprints and (title or link):
         fingerprints = build_review_fingerprints(title, description, link)
 
-    raw_links = payload.get("links", [])
-    if not isinstance(raw_links, list):
-        raw_links = [raw_links] if raw_links else []
-    links = [clean_text(str(item)) for item in raw_links if clean_text(str(item))]
+    links = _extracted_from_normalize_application_record_19(payload, "links")
     if link:
         links.insert(0, link)
 
-    raw_sources = payload.get("sources", [])
-    if not isinstance(raw_sources, list):
-        raw_sources = [raw_sources] if raw_sources else []
-    sources = [clean_text(str(item)) for item in raw_sources if clean_text(str(item))]
+    sources = _extracted_from_normalize_application_record_19(payload, "sources")
     if source:
         sources.insert(0, source)
 
     if not title or not links or not fingerprints:
         return None
 
-    raw_reasons = payload.get("reasons", [])
-    if not isinstance(raw_reasons, list):
-        raw_reasons = [raw_reasons] if raw_reasons else []
-    reasons = [clean_text(str(reason)) for reason in raw_reasons if clean_text(str(reason))]
-
+    reasons = _extracted_from_normalize_application_record_19(payload, "reasons")
     raw_fit_notes = payload.get("why_this_fits", [])
     if not isinstance(raw_fit_notes, list):
         raw_fit_notes = [raw_fit_notes] if raw_fit_notes else []
@@ -160,6 +147,14 @@ def normalize_application_record(payload: Mapping[str, object]) -> dict[str, obj
         "match_count": max(1, safe_int(payload.get("match_count", 1), 1)),
         "fingerprints": dedupe_preserving_order(fingerprints),
     }
+
+
+# TODO Rename this here and in `normalize_application_record`
+def _extracted_from_normalize_application_record_19(payload, arg1):
+    raw_fingerprints = payload.get(arg1, [])
+    if not isinstance(raw_fingerprints, list):
+        raw_fingerprints = [raw_fingerprints] if raw_fingerprints else []
+    return [clean_text(str(fingerprint)) for fingerprint in raw_fingerprints if clean_text(str(fingerprint))]
 
 
 def load_applications_state(_applications_file: str) -> ApplicationsState:
@@ -281,9 +276,7 @@ def normalize_currency_token(token: str) -> str:
         return "gbp"
     if normalized in {"$", "usd", "us$", "dollar", "dollars"}:
         return "usd"
-    if normalized in {"€", "eur", "euro", "euros"}:
-        return "eur"
-    return ""
+    return "eur" if normalized in {"€", "eur", "euro", "euros"} else ""
 
 
 def detect_salary_cadence(context: str) -> str:
@@ -465,9 +458,7 @@ def format_salary_info_for_reason(salary_info: dict[str, object]) -> str:
         suffix.append(str(salary_info["currency"]).upper())
     if salary_info["cadence"] != "year":
         suffix.append(str(salary_info["cadence"]))
-    if suffix:
-        return f"{base} from {' '.join(suffix)}"
-    return base
+    return f"{base} from {' '.join(suffix)}" if suffix else base
 
 
 def apply_weight_map(text: str, weights: dict[str, int], reasons: list[str], prefix: str) -> int:
@@ -505,10 +496,11 @@ def evaluate_company_preferences(company_name: str, search_config: SearchConfig)
     if not normalized_company:
         return {"qualified": True, "score_delta": 0, "reason": "", "control": "none", "shortlisted": False}
     _PatternList = list[tuple[str, re.Pattern[str]]]
-    blacklist_match = find_pattern_matches(
-        normalized_company, cast(_PatternList, search_config["company_blacklist_entries"]), limit=1
-    )
-    if blacklist_match:
+    if blacklist_match := find_pattern_matches(
+        normalized_company,
+        cast(_PatternList, search_config["company_blacklist_entries"]),
+        limit=1,
+    ):
         return {
             "qualified": False,
             "score_delta": 0,
@@ -516,10 +508,11 @@ def evaluate_company_preferences(company_name: str, search_config: SearchConfig)
             "control": "blacklist",
             "shortlisted": False,
         }
-    priority_match = find_pattern_matches(
-        normalized_company, cast(_PatternList, search_config["priority_company_entries"]), limit=1
-    )
-    if priority_match:
+    if priority_match := find_pattern_matches(
+        normalized_company,
+        cast(_PatternList, search_config["priority_company_entries"]),
+        limit=1,
+    ):
         return {
             "qualified": True,
             "score_delta": 14,
@@ -703,8 +696,7 @@ def build_resume_bullet_suggestions(evidence_entries: list[dict[str, object]]) -
     """
     suggestions = []
     for entry in evidence_entries:
-        bullet = ensure_sentence(truncate_text(entry.get("text", ""), 220))
-        if bullet:
+        if bullet := ensure_sentence(truncate_text(entry.get("text", ""), 220)):
             suggestions.append(bullet)
     return dedupe_preserving_order(suggestions)[:3]
 
@@ -837,16 +829,13 @@ def apply_feedback_adjustments(
     keyword_adjustments = []
     keyword_adj_map = cast(dict[str, object], feedback_profile["keyword_adjustments"])
     for keyword in dedupe_preserving_order(feedback_keywords):
-        adjustment = safe_int(keyword_adj_map.get(keyword, 0), 0)
-        if adjustment:
+        if adjustment := safe_int(keyword_adj_map.get(keyword, 0), 0):
             keyword_adjustments.append((keyword, adjustment))
     keyword_adjustments.sort(key=lambda item: (abs(item[1]), item[1], item[0]), reverse=True)
-    selected_adjustments = keyword_adjustments[: int(cast(int, feedback_profile["keyword_limit"]))]
-    if selected_adjustments:
+    if selected_adjustments := keyword_adjustments[: int(cast(int, feedback_profile["keyword_limit"]))]:
         total_keyword_delta = sum(item[1] for item in selected_adjustments)
         max_keyword_delta = int(cast(int, feedback_profile["max_keyword_adjustment"]))
-        total_keyword_delta = max(-max_keyword_delta, min(max_keyword_delta, total_keyword_delta))
-        if total_keyword_delta:
+        if total_keyword_delta := max(-max_keyword_delta, min(max_keyword_delta, total_keyword_delta)):
             score_delta += total_keyword_delta
             adjustment_text = ", ".join(
                 f"{keyword} ({adjustment:+d})" for keyword, adjustment in selected_adjustments[:3]
@@ -877,12 +866,11 @@ def _calculate_target_role_score(
     if target_title_matches:
         score += min(48, 34 + 7 * (len(target_title_matches) - 1))
         append_reason(reasons, f"target role in title: {', '.join(target_title_matches)}")
-    target_desc_matches = [
+    if target_desc_matches := [
         match
         for match in find_pattern_matches(normalized_desc, target_role_entries, limit=3)
         if match not in target_title_matches
-    ]
-    if target_desc_matches:
+    ]:
         score += min(18, 9 * len(target_desc_matches))
         append_reason(reasons, f"target role in description: {', '.join(target_desc_matches)}")
     return score, target_title_matches
@@ -1009,8 +997,7 @@ def _apply_role_profile_score(
     Returns:
         Tuple of (score_delta, role_profile_match_dict).
     """
-    match = evaluate_role_profile(normalized_title, normalized_desc, search_config)
-    if match:
+    if match := evaluate_role_profile(normalized_title, normalized_desc, search_config):
         rp_title_matches = cast(list[str], match["title_matches"])
         rp_desc_matches = cast(list[str], match["description_matches"])
         parts: list[str] = []
@@ -1229,13 +1216,15 @@ def queue_pending_alerts(alert_state: AlertState, matches: list[dict[str, object
         link = str(match["link"])
         if link in pending_links or link in alerted_links:
             continue
+        raw_reasons = match.get("reasons", [])
+        reasons = raw_reasons if isinstance(raw_reasons, list) else []
         pending_alerts.append(
             {
                 "time": match["time"],
                 "title": match["title"],
                 "link": link,
                 "score": match["score"],
-                "reasons": match["reasons"],
+                "reasons": reasons,
                 "source": match["source"],
                 "company": match.get("company", ""),
                 "shortlisted": bool(match.get("shortlisted", False)),
@@ -1999,24 +1988,25 @@ def seed_applications_from_existing_jobs(
     """
     if applications_state["applications"] or not existing_jobs:
         return 0
-    created = 0
-    for job in existing_jobs:
-        if upsert_application_record(
-            applications_state,
-            {
-                "title": job["title"],
-                "description": job["description"],
-                "link": job["link"],
-                "company": split_title_and_company(job["title"])[1],
-                "status": "new",
-                "score": 0,
-                "best_score": 0,
-                "reasons": [],
-            },
-            job["time"] or datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
-        ):
-            created += 1
-    return created
+    return sum(
+        bool(
+            upsert_application_record(
+                applications_state,
+                {
+                    "title": job["title"],
+                    "description": job["description"],
+                    "link": job["link"],
+                    "company": split_title_and_company(job["title"])[1],
+                    "status": "new",
+                    "score": 0,
+                    "best_score": 0,
+                    "reasons": [],
+                },
+                job["time"] or datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+            )
+        )
+        for job in existing_jobs
+    )
 
 
 def rank_application_for_digest(application: dict[str, object], current_dt: datetime) -> tuple[int, float]:
@@ -2174,7 +2164,7 @@ def format_daily_digest_messages(
     if not items:
         return [f"Daily Job Digest: {snapshot['digest_date_utc']}\nNo items."]
 
-    page_size = max(1, int(page_size))
+    page_size = max(1, page_size)
     item_blocks = [_format_daily_digest_item(item, index) for index, item in enumerate(items, start=1)]
     pages: list[list[str]] = []
     current_page: list[str] = []
@@ -2260,9 +2250,7 @@ def parse_digest_callback_data(value: object) -> tuple[str | None, str | None]:
         return None, None
     session_id = clean_text(parts[1])
     page_token = clean_text(parts[2])
-    if not session_id or not page_token:
-        return None, None
-    return session_id, page_token
+    return (session_id, page_token) if session_id and page_token else (None, None)
 
 
 def build_daily_digest_keyboard(session_id: str, page_index: int, total_pages: int) -> dict[str, object] | None:
@@ -2391,7 +2379,12 @@ def process_telegram_callback_updates(timeout: int = 0, limit: int = 20) -> tupl
         )
         if not ok:
             last_error = edit_error
-            _ack_callback(callback_query_id, token, f"Unable to change page: {edit_error}", True)
+            _ack_callback(
+                callback_query_id,
+                token,
+                f"Unable to change page: {last_error}",
+                True,
+            )
             continue
 
         _ack_callback(callback_query_id, token)
@@ -2431,10 +2424,7 @@ def maybe_send_daily_digest(  # pylint: disable=too-many-return-statements
     if clean_text(str(applications_state.get("last_digest_date_utc", ""))) == digest_date:
         return False, ""
     if not cast(list[Any], snapshot["items"]):
-        applications_state["last_digest_utc"] = current_run_ts
-        applications_state["last_digest_date_utc"] = digest_date
-        applications_state["last_digest_error"] = ""
-        return False, ""
+        return _extracted_from_maybe_send_daily_digest_30(current_run_ts, applications_state, digest_date, False)
     token, chat_id, thread_id = load_telegram_settings()
     if not token or not chat_id:
         error = "Telegram credentials not configured; daily digest not sent."
@@ -2454,10 +2444,15 @@ def maybe_send_daily_digest(  # pylint: disable=too-many-return-statements
     if not ok:
         applications_state["last_digest_error"] = error
         return False, error
+    return _extracted_from_maybe_send_daily_digest_30(current_run_ts, applications_state, digest_date, True)
+
+
+# TODO Rename this here and in `maybe_send_daily_digest`
+def _extracted_from_maybe_send_daily_digest_30(current_run_ts, applications_state, digest_date, arg3):
     applications_state["last_digest_utc"] = current_run_ts
     applications_state["last_digest_date_utc"] = digest_date
     applications_state["last_digest_error"] = ""
-    return True, ""
+    return arg3, ""
 
 
 def build_application_briefs_snapshot(

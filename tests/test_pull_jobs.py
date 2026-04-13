@@ -12,7 +12,7 @@ import pull_jobs
 from jobbot import storage as jobbot_storage
 from jobbot.common import fresh_applications_state
 from jobbot.matching import normalize_application_record, process_telegram_callback_updates, upsert_application_record
-from jobbot.models import JobLead, SearchConfig
+from jobbot.models import ApplicationsState, JobLead, SearchConfig
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 RESUME_PATH = REPO_ROOT / "resume.json"
@@ -157,10 +157,7 @@ class PullJobsTestCase(unittest.TestCase):
         }
         created = upsert_application_record(state, second_payload, "2026-04-04T11:00:00Z")
         self.assertFalse(created)
-        self.assertEqual(len(state["applications"]), 1)
-
-        application = state["applications"][0]
-        self.assertEqual(application["status"], "reviewed")
+        application = self._assert_single_application(state, "status", "reviewed")
         self.assertEqual(application["notes"], "Manual note")
         self.assertEqual(application["best_score"], 64)
         self.assertEqual(len(cast(list[object], application["links"])), 2)
@@ -210,13 +207,17 @@ class PullJobsTestCase(unittest.TestCase):
         }
         self.assertFalse(pull_jobs.upsert_application_record_in_storage(second_payload, "2026-04-04T11:00:00Z"))
 
-        applications_state = cast(dict[str, Any], pull_jobs.load_applications_state())
-        self.assertEqual(len(applications_state["applications"]), 1)
-        application = applications_state["applications"][0]
-        self.assertEqual(application["best_score"], 64)
+        applications_state = pull_jobs.load_applications_state()
+        application = self._assert_single_application(applications_state, "best_score", 64)
         self.assertIn("https://example.com/jobs/monzo-it-support", application["links"])
         self.assertIn("https://boards.example.com/monzo/it-support", application["links"])
         self.assertIn("hardware support", application["feedback_keywords"])
+
+    def _assert_single_application(self, state: ApplicationsState, key: str, expected: Any) -> dict[str, Any]:
+        self.assertEqual(len(state["applications"]), 1)
+        result = cast(dict[str, Any], state["applications"][0])
+        self.assertEqual(result[key], expected)
+        return result
 
     def test_feedback_metrics_and_scoring_adjustments(self) -> None:
         search_config = self.write_search_config(
@@ -640,9 +641,7 @@ class PullJobsTestCase(unittest.TestCase):
         self.assertEqual(len(rows), 1)
         self.assertEqual(rows[0]["title"], "IT Support Engineer at Monzo")
 
-        matches = json.loads(Path("matches.json").read_text(encoding="utf-8"))
-        self.assertEqual(matches["match_count"], 1)
-        self.assertEqual(matches["matches"][0]["company"], "Monzo")
+        matches = self._assert_runtime_file_has_single_company("matches.json", "match_count", "matches")
         self.assertTrue(matches["matches"][0]["application_ready"])
 
         alert_state = json.loads(Path("alerts_state.json").read_text(encoding="utf-8"))
@@ -665,10 +664,7 @@ class PullJobsTestCase(unittest.TestCase):
         digest = json.loads(Path("daily_digest.json").read_text(encoding="utf-8"))
         self.assertEqual(digest["item_count"], 1)
 
-        briefs = json.loads(Path("application_briefs.json").read_text(encoding="utf-8"))
-        self.assertEqual(briefs["brief_count"], 1)
-        self.assertEqual(briefs["items"][0]["company"], "Monzo")
-
+        self._assert_runtime_file_has_single_company("application_briefs.json", "brief_count", "items")
         borderline = json.loads(Path("borderline_matches.json").read_text(encoding="utf-8"))
         self.assertEqual(borderline["candidate_count"], 0)
 
@@ -686,6 +682,17 @@ class PullJobsTestCase(unittest.TestCase):
         self.assertEqual(job_count, 1)
         self.assertEqual(application_count, 1)
         self.assertEqual(feed_count, 1)
+
+    def _assert_runtime_file_has_single_company(
+        self,
+        file_name: str,
+        count_key: str,
+        items_key: str,
+    ) -> dict[str, Any]:
+        result = cast(dict[str, Any], json.loads(Path(file_name).read_text(encoding="utf-8")))
+        self.assertEqual(result[count_key], 1)
+        self.assertEqual(result[items_key][0]["company"], "Monzo")
+        return result
 
     def test_main_does_not_mark_feed_checked_when_fetch_fails(self) -> None:
         self.write_search_config(

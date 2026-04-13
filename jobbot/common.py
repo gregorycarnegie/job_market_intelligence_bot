@@ -566,9 +566,7 @@ def parse_bool(value: object, default: bool = False) -> bool:
     normalized = normalize_text(str(value))
     if normalized in {"1", "true", "yes", "on"}:
         return True
-    if normalized in {"0", "false", "no", "off"}:
-        return False
-    return default
+    return False if normalized in {"0", "false", "no", "off"} else default
 
 
 def dedupe_preserving_order(values: list[str]) -> list[str]:
@@ -835,10 +833,8 @@ def build_review_fingerprints(title: str, description: str, link: str) -> list[s
     if normalized_role_title and normalized_company:
         fingerprints.append(f"role_company:{normalized_role_title}|{normalized_company}")
 
-    if not fingerprints:
-        fallback_text = normalize_text(f"{title} {description}")[:180]
-        if fallback_text:
-            fingerprints.append(f"text:{fallback_text}")
+    if not fingerprints and (fallback_text := normalize_text(f"{title} {description}")[:180]):
+        fingerprints.append(f"text:{fallback_text}")
 
     return dedupe_preserving_order(fingerprints)
 
@@ -897,18 +893,16 @@ def build_resume_evidence_entries(resume: dict[str, object]) -> list[dict[str, s
         if not isinstance(highlights, list):
             continue
         for highlight in highlights:
-            text = clean_text(str(highlight))
-            if not text:
-                continue
-            entries.append(
-                {
-                    "label": label or "Experience",
-                    "role": role,
-                    "organization": organization,
-                    "text": text,
-                    "normalized_text": normalize_text(join_text_parts(role, organization, text)),
-                }
-            )
+            if text := clean_text(str(highlight)):
+                entries.append(
+                    {
+                        "label": label or "Experience",
+                        "role": role,
+                        "organization": organization,
+                        "text": text,
+                        "normalized_text": normalize_text(join_text_parts(role, organization, text)),
+                    }
+                )
 
     return entries
 
@@ -976,8 +970,7 @@ def normalize_company_control_values(values: object) -> list[str]:
     """
     normalized_values = []
     for value in values if isinstance(values, list) else [values] if values else []:
-        normalized_company = normalize_company_name(clean_text(str(value)))
-        if normalized_company:
+        if normalized_company := normalize_company_name(clean_text(str(value))):
             normalized_values.append(normalized_company)
     return dedupe_preserving_order(normalized_values)
 
@@ -1452,10 +1445,9 @@ def ensure_sentence(text: object) -> str:
     Returns:
         Text with a trailing period if needed.
     """
-    cleaned = clean_text(str(text)).strip()
-    if not cleaned:
-        return ""
-    return cleaned if cleaned.endswith((".", "!", "?")) else f"{cleaned}."
+    if cleaned := clean_text(str(text)).strip():
+        return cleaned if cleaned.endswith((".", "!", "?")) else f"{cleaned}."
+    return ""
 
 
 def truncate_text(text: object, limit: int = 180) -> str:
@@ -1490,8 +1482,7 @@ def build_focus_phrases(*sources: object) -> list[str]:
     for source in sources:
         values = source if isinstance(source, list) else [source] if source else []
         for value in values:
-            normalized = normalize_text(str(value))
-            if normalized:
+            if normalized := normalize_text(str(value)):
                 phrases.append(normalized)
     return dedupe_preserving_order(phrases)
 
@@ -1537,4 +1528,4 @@ def latest_application_timestamp(application: Mapping[str, object]) -> datetime 
         parse_iso_utc(application.get("first_seen_utc", "")),
     ]
     candidates = [timestamp for timestamp in timestamps if timestamp is not None]
-    return max(candidates) if candidates else None
+    return max(candidates, default=None)

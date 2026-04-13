@@ -162,8 +162,7 @@ def _initialize_database(connection: sqlite3.Connection, db_path: Path) -> None:
         """,
     ]
 
-    pending = [i for i in range(1, len(migrations) + 1) if i not in applied]
-    if pending:
+    if any(i not in applied for i in range(1, len(migrations) + 1)):
         _backup_before_migration(db_path)
 
     for i, sql in enumerate(migrations, start=1):
@@ -174,9 +173,7 @@ def _initialize_database(connection: sqlite3.Connection, db_path: Path) -> None:
             connection.executescript(sql)
         except sqlite3.OperationalError as exc:
             # Handle cases where columns might already exist due to previous manual hacks
-            if "duplicate column name" in str(exc).lower():
-                pass
-            else:
+            if "duplicate column name" not in str(exc).lower():
                 raise
         connection.execute("INSERT INTO migrations (id) VALUES (?)", (i,))
 
@@ -547,8 +544,7 @@ def append_reviewed_fingerprints(db_file: str, fingerprints: list[str], max_item
 
         row = connection.execute("SELECT COUNT(*) AS count FROM reviewed_fingerprints").fetchone()
         total_count = int(row["count"]) if row is not None else 0
-        overflow = max(0, total_count - max_items)
-        if overflow:
+        if overflow := max(0, total_count - max_items):
             connection.execute(
                 """
                     DELETE FROM reviewed_fingerprints
@@ -707,7 +703,7 @@ def find_application_by_link_or_fingerprints(
     Returns:
         A tuple of (primary_link, payload_dict) if found, else (None, None).
     """
-    candidate_link = str(link)
+    candidate_link = link
     candidate_fingerprints = _dedupe_values(fingerprints)
     with contextlib.closing(_connect(db_file)) as connection:
         application_link = None
@@ -760,31 +756,38 @@ def save_application_record(
         return
 
     with contextlib.closing(_connect(db_file)) as connection, connection:  # pylint: disable=confusing-with-statement
-        row = None
-        if previous_link:
-            row = connection.execute(
-                "SELECT position FROM applications WHERE link = ?",
-                (previous_link,),
-            ).fetchone()
-        if row is None:
-            row = connection.execute(
-                "SELECT position FROM applications WHERE link = ?",
-                (application_link,),
-            ).fetchone()
-        position = int(row["position"]) if row is not None else _next_position(connection, "applications")
+        _extracted_from_save_application_record_(connection, previous_link, application_link, application)
 
-        if previous_link:
-            _delete_application_indexes(connection, previous_link)
-            connection.execute("DELETE FROM applications WHERE link = ?", (previous_link,))
-        if application_link != previous_link:
-            _delete_application_indexes(connection, application_link)
-            connection.execute("DELETE FROM applications WHERE link = ?", (application_link,))
 
+# TODO Rename this here and in `save_application_record`
+def _extracted_from_save_application_record_(connection, previous_link, application_link, application):
+    row = (
         connection.execute(
-            "INSERT INTO applications(position, link, payload_json) VALUES (?, ?, ?)",
-            (position, application_link, json.dumps(application, ensure_ascii=False)),
-        )
-        _index_application(connection, application)
+            "SELECT position FROM applications WHERE link = ?",
+            (previous_link,),
+        ).fetchone()
+        if previous_link
+        else None
+    )
+    if row is None:
+        row = connection.execute(
+            "SELECT position FROM applications WHERE link = ?",
+            (application_link,),
+        ).fetchone()
+    position = int(row["position"]) if row is not None else _next_position(connection, "applications")
+
+    if previous_link:
+        _delete_application_indexes(connection, previous_link)
+        connection.execute("DELETE FROM applications WHERE link = ?", (previous_link,))
+    if application_link != previous_link:
+        _delete_application_indexes(connection, application_link)
+        connection.execute("DELETE FROM applications WHERE link = ?", (application_link,))
+
+    connection.execute(
+        "INSERT INTO applications(position, link, payload_json) VALUES (?, ?, ?)",
+        (position, application_link, json.dumps(application, ensure_ascii=False)),
+    )
+    _index_application(connection, application)
 
 
 def save_applications_state(db_file: str, applications_state: ApplicationsState) -> None:
@@ -858,7 +861,7 @@ def save_telegram_update_offset(db_file: str, offset: int) -> None:
     with contextlib.closing(_connect(db_file)) as connection, connection:  # pylint: disable=confusing-with-statement
         connection.execute(
             "INSERT OR REPLACE INTO state_metadata(scope, key, value) VALUES ('telegram', 'update_offset', ?)",
-            (str(max(0, int(offset))),),
+            (str(max(0, offset)),),
         )
 
 
@@ -890,8 +893,7 @@ def save_telegram_digest_session(
         if keep_latest > 0:
             row = connection.execute("SELECT COUNT(*) AS count FROM telegram_digest_sessions").fetchone()
             total_count = int(row["count"]) if row is not None else 0
-            overflow = max(0, total_count - keep_latest)
-            if overflow:
+            if overflow := max(0, total_count - keep_latest):
                 connection.execute(
                     """
                         DELETE FROM telegram_digest_sessions
@@ -934,11 +936,10 @@ def load_telegram_digest_session(db_file: str, session_id: str) -> dict[str, obj
         return None
     if not isinstance(pages, list):
         return None
-    page_texts = [str(page) for page in pages if str(page)]
-    if not page_texts:
-        return None
-    return {
-        "session_id": str(row["session_id"]),
-        "created_at": str(row["created_at"]),
-        "pages": page_texts,
-    }
+    if page_texts := [str(page) for page in pages if str(page)]:
+        return {
+            "session_id": str(row["session_id"]),
+            "created_at": str(row["created_at"]),
+            "pages": page_texts,
+        }
+    return None

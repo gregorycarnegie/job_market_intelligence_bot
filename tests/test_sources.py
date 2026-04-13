@@ -25,14 +25,14 @@ class SourcesUtilsTestCase(unittest.TestCase):
         self.assertLessEqual(len(result), 100)
 
     def test_extract_meta_content_finds_property(self) -> None:
-        html = '<meta property="og:title" content="My Title" />'
-        result = sources.extract_meta_content(html, "property", "og:title")
-        self.assertEqual(result, "My Title")
+        self._assert_og_title_meta_content('<meta property="og:title" content="My Title" />', "My Title")
 
     def test_extract_meta_content_finds_reversed_attribute_order(self) -> None:
-        html = '<meta content="Rev Title" property="og:title" />'
+        self._assert_og_title_meta_content('<meta content="Rev Title" property="og:title" />', "Rev Title")
+
+    def _assert_og_title_meta_content(self, html: str, expected: str) -> None:
         result = sources.extract_meta_content(html, "property", "og:title")
-        self.assertEqual(result, "Rev Title")
+        self.assertEqual(result, expected)
 
     def test_extract_meta_content_returns_empty_when_missing(self) -> None:
         result = sources.extract_meta_content("<html></html>", "property", "og:title")

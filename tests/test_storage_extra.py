@@ -136,7 +136,7 @@ class TelegramDigestSessionTestCase(StorageTestBase):
             )
         # Sessions 0-1 should have been pruned; only the 3 newest should remain
         still_present = sum(
-            1 for i in range(5) if jobbot_storage.load_telegram_digest_session(self.db, f"session-{i}") is not None
+            jobbot_storage.load_telegram_digest_session(self.db, f"session-{i}") is not None for i in range(5)
         )
         self.assertLessEqual(still_present, 3)
 
@@ -221,10 +221,7 @@ class LoadLatestJobBatchTestCase(StorageTestBase):
 
 class ExportJobsToCsvTestCase(StorageTestBase):
     def test_creates_csv_with_headers(self) -> None:
-        csv_file = "jobs.csv"
-        jobbot_storage.export_jobs_to_csv(self.db, csv_file)
-        content = Path(csv_file).read_text(encoding="utf-8")
-        self.assertIn("title", content)
+        content = self._assert_export_contains("jobs.csv", "title")
         self.assertIn("link", content)
 
     def test_exports_job_rows(self) -> None:
@@ -239,10 +236,13 @@ class ExportJobsToCsvTestCase(StorageTestBase):
                 }
             ],
         )
-        csv_file = "jobs_export.csv"
+        self._assert_export_contains("jobs_export.csv", "IT Support")
+
+    def _assert_export_contains(self, csv_file: str, expected_text: str) -> str:
         jobbot_storage.export_jobs_to_csv(self.db, csv_file)
-        content = Path(csv_file).read_text(encoding="utf-8")
-        self.assertIn("IT Support", content)
+        result = Path(csv_file).read_text(encoding="utf-8")
+        self.assertIn(expected_text, result)
+        return result
 
 
 class SubdirDbTestCase(unittest.TestCase):

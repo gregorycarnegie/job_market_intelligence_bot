@@ -75,7 +75,7 @@ def _urlopen_with_retry(request: Request, timeout: int) -> http.client.HTTPRespo
             last_exc = exc
         delay = _RETRY_BACKOFF_BASE * (2**attempt)
         logger.warning(
-            "Fetch attempt %d/%d failed (%s); retrying in %.0ls",
+            "Fetch attempt %d/%d failed (%s); retrying in %.0fs",
             attempt + 1,
             _MAX_RETRIES,
             last_exc,
@@ -131,7 +131,7 @@ def fetch_json(url: str, headers: dict[str, str] | None = None) -> object:
         "Cache-Control": "no-cache",
     }
     if headers:
-        request_headers.update(headers)
+        request_headers |= headers
 
     request = Request(url, headers=request_headers)
     with _urlopen_with_retry(request, timeout=FETCH_TIMEOUT_SECONDS) as response:
@@ -158,7 +158,7 @@ def fetch_json_post(url: str, body: dict[str, object], headers: dict[str, str] |
         "Content-Type": "application/json",
     }
     if headers:
-        request_headers.update(headers)
+        request_headers |= headers
     data = json.dumps(body).encode("utf-8")
     request = Request(url, data=data, headers=request_headers)
     with _urlopen_with_retry(request, timeout=FETCH_TIMEOUT_SECONDS) as response:
@@ -199,8 +199,7 @@ def extract_meta_content(html_text: str, attr_name: str, attr_value: str) -> str
         rf"<meta\b[^>]*{attr_name}=[\"']{re.escape(attr_value)}[\"'][^>]*content=[\"'](.*?)[\"'][^>]*>",
         re.IGNORECASE | re.DOTALL,
     )
-    match = pattern.search(html_text)
-    if match:
+    if match := pattern.search(html_text):
         return clean_text(match.group(1))
 
     reverse_pattern = re.compile(
@@ -226,19 +225,14 @@ def extract_page_title(html_text: str) -> str:
         lambda text: extract_meta_content(text, "property", "og:title"),
         lambda text: extract_meta_content(text, "name", "twitter:title"),
     ):
-        value = extractor(html_text)
-        if value:
+        if value := extractor(html_text):
             return value
 
-    title_match = re.search(r"<title\b[^>]*>(.*?)</title>", html_text, re.IGNORECASE | re.DOTALL)
-    if title_match:
+    if title_match := re.search(r"<title\b[^>]*>(.*?)</title>", html_text, re.IGNORECASE | re.DOTALL):
         return clean_text(title_match.group(1))
 
     h1_match = re.search(r"<h1\b[^>]*>(.*?)</h1>", html_text, re.IGNORECASE | re.DOTALL)
-    if h1_match:
-        return clean_text(h1_match.group(1))
-
-    return ""
+    return clean_text(h1_match.group(1)) if h1_match else ""
 
 
 def extract_plain_text_from_html(html_text: str, limit: int = 3000) -> str:
@@ -333,11 +327,11 @@ def extract_jobposting_nodes(html_text: str) -> list[dict[str, object]]:
     Returns:
         A list of JobPosting dictionaries.
     """
-    nodes = []
+    nodes: list[dict[str, object]] = []
     for payload in extract_jsonld_objects(html_text):
-        for node in iter_json_nodes(payload):
-            if isinstance(node, dict) and node_has_type(node, "JobPosting"):
-                nodes.append(node)
+        nodes.extend(
+            node for node in iter_json_nodes(payload) if isinstance(node, dict) and node_has_type(node, "JobPosting")
+        )
     return nodes
 
 
@@ -384,11 +378,13 @@ def extract_jsonld_location_text(node: Mapping[str, object]) -> str:
         locations.append(join_text_parts(location.get("name", ""), format_jsonld_address(address)))
 
     applicant_requirements = node.get("applicantLocationRequirements")
-    for requirement in applicant_requirements if isinstance(applicant_requirements, list) else [applicant_requirements]:
-        if not isinstance(requirement, dict):
-            continue
-        locations.append(format_jsonld_address(requirement.get("address")))
-
+    locations.extend(
+        format_jsonld_address(requirement.get("address"))
+        for requirement in (
+            applicant_requirements if isinstance(applicant_requirements, list) else [applicant_requirements]
+        )
+        if isinstance(requirement, dict)
+    )
     return " ".join(value for value in dedupe_preserving_order(locations) if value)
 
 
@@ -465,8 +461,7 @@ def extract_jsonld_salary_text(node: Mapping[str, object]) -> str:
             maximum = candidate.get("maxValue") or candidate.get("value")
             cadence = normalize_salary_unit_text(candidate.get("unitText"))
 
-        salary_text = format_provider_salary_text(minimum, maximum, currency, cadence)
-        if salary_text:
+        if salary_text := format_provider_salary_text(minimum, maximum, currency, cadence):
             return salary_text
     return ""
 
@@ -593,7 +588,7 @@ def looks_like_generic_job_link(
         return True
 
     keywords = list(cast(list[str], board["job_link_keywords"])) or list(DEFAULT_GENERIC_JOB_LINK_KEYWORDS)
-    return bool(any(keyword in normalized_url or keyword in normalized_anchor for keyword in keywords))
+    return any(keyword in normalized_url or keyword in normalized_anchor for keyword in keywords)
 
 
 def fallback_generic_job_item(html_text: str, url: str, display_name: str) -> JobLead | None:
@@ -622,31 +617,30 @@ class GenericHtmlSource(Source):
 
     def fetch(self) -> list[JobLead]:
         board = self.config
-        candidate_links = []
+        candidate_links: list[str] = []
         for start_url in cast(list[str], board["start_urls"])[:GENERIC_HTML_MAX_START_URLS]:
             html_text = fetch_feed(start_url)
-            for absolute_url, anchor_text in extract_anchor_links(html_text, start_url):
-                if looks_like_generic_job_link(absolute_url, anchor_text, board):
-                    candidate_links.append(absolute_url)
-
-        items = []
-        seen_links = set()
+            candidate_links.extend(
+                absolute_url
+                for absolute_url, anchor_text in extract_anchor_links(html_text, start_url)
+                if looks_like_generic_job_link(absolute_url, anchor_text, board)
+            )
+        items: list[JobLead] = []
+        seen_links: set[str] = set()
         candidate_links = dedupe_preserving_order(candidate_links)[
             : safe_int(board.get("max_job_pages"), GENERIC_HTML_MAX_JOB_LINKS)
         ]
 
         for candidate_link in candidate_links:
             html_text = fetch_feed(candidate_link)
-            jsonld_items = [
+            if jsonld_items := [
                 item
                 for item in (
                     jobposting_node_to_item(node, str(board.get("display_name", "")), candidate_link)
                     for node in extract_jobposting_nodes(html_text)
                 )
                 if item is not None
-            ]
-
-            if jsonld_items:
+            ]:
                 for item in jsonld_items:
                     link = clean_text(item.link)
                     if link and link not in seen_links:
@@ -674,8 +668,7 @@ def sanitize_xml(xml_raw: str) -> str:
     """
     cleaned = xml_raw
     cleaned = cleaned.replace("&nbsp;", " ")
-    cleaned = re.sub(r"&(?!#?[a-z0-9]+;)", "&amp;", cleaned, flags=re.IGNORECASE)
-    return cleaned
+    return re.sub(r"&(?!#?[a-z0-9]+;)", "&amp;", cleaned, flags=re.IGNORECASE)
 
 
 def local_name(tag: str) -> str:
@@ -688,9 +681,7 @@ def local_name(tag: str) -> str:
     Returns:
         The local part of the tag name.
     """
-    if "}" in tag:
-        return tag.rsplit("}", 1)[-1]
-    return tag
+    return tag.rsplit("}", 1)[-1] if "}" in tag else tag
 
 
 def extract_link(item: ElementTree.Element) -> str:
@@ -707,8 +698,7 @@ def extract_link(item: ElementTree.Element) -> str:
         tag = local_name(child.tag)
         if tag != "link":
             continue
-        href = child.attrib.get("href")
-        if href:
+        if href := child.attrib.get("href"):
             return href.strip()
         if child.text:
             return child.text.strip()
@@ -726,10 +716,14 @@ def extract_description(item: ElementTree.Element) -> str:
         The combined text content.
     """
     desc_tags = {"description", "summary", "encoded", "content"}
-    for child in item:
-        if local_name(child.tag) in desc_tags:
-            return strip_cdata("".join(child.itertext()) or (child.text or ""))
-    return ""
+    return next(
+        (
+            strip_cdata("".join(child.itertext()) or (child.text or ""))
+            for child in item
+            if local_name(child.tag) in desc_tags
+        ),
+        "",
+    )
 
 
 def parse_structured_feed(xml_text: str, display_name: str = "") -> list[JobLead]:
@@ -755,15 +749,17 @@ def parse_structured_feed(xml_text: str, display_name: str = "") -> list[JobLead
         if tag not in {"item", "entry", "job"}:
             continue
 
-        title = ""
         link = extract_link(item)
         description = extract_description(item)
 
-        for child in item:
-            if local_name(child.tag) == "title" and (child.text or "").strip():
-                title = strip_cdata(child.text or "")
-                break
-
+        title = next(
+            (
+                strip_cdata(child.text or "")
+                for child in item
+                if local_name(child.tag) == "title" and (child.text or "").strip()
+            ),
+            "",
+        )
         if not title and not link and not description:
             continue
         if link and link in seen_links:
@@ -802,8 +798,7 @@ def extract_tag_text(block: str, tag_names: list[str]) -> str:
             rf"<{tag_name}\b[^>]*>(.*?)</{tag_name}>",
             re.IGNORECASE | re.DOTALL,
         )
-        match = pattern.search(block)
-        if match:
+        if match := pattern.search(block):
             return strip_cdata(match.group(1))
     return ""
 
@@ -867,8 +862,7 @@ class RssSource(Source):
             try:
                 return parse_structured_feed(sanitized, display_name)
             except ElementTree.ParseError:
-                items = parse_fallback_feed(sanitized, display_name)
-                if items:
+                if items := parse_fallback_feed(sanitized, display_name):
                     return items
                 raise
 
@@ -946,11 +940,14 @@ def _normalize_workable(raw_board: Mapping[str, object], normalized: dict[str, o
 def _normalize_generic_html(raw_board: Mapping[str, object], normalized: dict[str, object]) -> None:
     normalized["start_urls"] = normalize_url_list(raw_board.get("start_urls", []))
     raw_allowed_domains = raw_board.get("allowed_domains", [])
-    normalized["allowed_domains"] = normalize_string_list(raw_allowed_domains, lower=True)
-    if not normalized["allowed_domains"]:
-        normalized["allowed_domains"] = dedupe_preserving_order(
-            [urlsplit(url).netloc.lower() for url in cast(list[str], normalized["start_urls"]) if urlsplit(url).netloc]
-        )
+    derived_domains = dedupe_preserving_order(
+        [
+            split.netloc.lower()
+            for split in (urlsplit(url) for url in cast(list[str], normalized["start_urls"]))
+            if split.netloc
+        ]
+    )
+    normalized["allowed_domains"] = normalize_string_list(raw_allowed_domains, lower=True) or derived_domains
     normalized["job_link_keywords"] = normalize_string_list(
         raw_board.get("job_link_keywords", []),
         lower=True,
@@ -996,15 +993,11 @@ def normalize_company_board(raw_board: Mapping[str, object]) -> dict[str, object
         "min_interval_seconds": max(300, safe_int(raw_board.get("min_interval_seconds", 1800), 1800)),
     }
 
-    normalizer = BOARD_NORMALIZERS.get(platform)
-    if normalizer:
+    if normalizer := BOARD_NORMALIZERS.get(platform):
         normalizer(raw_board, normalized_board)
 
     missing_fields = [field for field in COMPANY_BOARD_REQUIRED_FIELDS[platform] if not normalized_board.get(field)]
-    if missing_fields:
-        return None
-
-    return normalized_board
+    return None if missing_fields else normalized_board
 
 
 def load_company_boards(company_boards_file: str) -> list[dict[str, object]]:
@@ -1679,8 +1672,7 @@ def parse_feed_items(xml_text: str, display_name: str = "") -> list[JobLead]:
         try:
             return parse_structured_feed(sanitized, display_name)
         except ElementTree.ParseError:
-            items = parse_fallback_feed(sanitized, display_name)
-            if items:
+            if items := parse_fallback_feed(sanitized, display_name):
                 return items
             raise
 
@@ -1751,9 +1743,7 @@ def fetch_company_board_items(board: Mapping[str, object]) -> list[JobLead]:
         return fetch_ashby_board_jobs(board)
     if platform == "workable":
         return fetch_workable_board_jobs(board)
-    if platform == "generic_html":
-        return GenericHtmlSource(board).fetch()
-    return []
+    return GenericHtmlSource(board).fetch() if platform == "generic_html" else []
 
 
 def parse_source_items(source: Mapping[str, object], xml_raw: str) -> list[JobLead]:
@@ -1768,7 +1758,7 @@ def parse_source_items(source: Mapping[str, object], xml_raw: str) -> list[JobLe
         List of JobLead objects.
     """
     source_type = str(source.get("type", ""))
-    display_name = str(source.get("display_name", "") or source.get("name", ""))
     if source_type == "efc_html":
         return parse_efinancialcareers_html(xml_raw, source)
+    display_name = str(source.get("display_name", "") or source.get("name", ""))
     return parse_feed_items(xml_raw, display_name)

@@ -246,6 +246,7 @@ def main() -> int:
                                 "source": "System Monitor",
                                 "qualified": True,
                                 "score": 100,
+                                "reasons": ["Source failed 10 times consecutively"],
                             }
                         )
                     continue

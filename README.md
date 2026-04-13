@@ -172,14 +172,14 @@ If `job_search_config.json` is missing, the code falls back to built-in defaults
 From the repo root:
 
 ```bash
-python3 pull_jobs.py
-python3 pull_desc.py
+uv run python pull_jobs.py
+uv run python pull_desc.py
 ```
 
 If you are using direct Telegram digest paging outside `exec_loop.sh`, run the callback worker separately:
 
 ```bash
-python3 telegram_callback_worker.py
+uv run python telegram_callback_worker.py
 ```
 
 ### 8. Run Continuously
@@ -237,7 +237,7 @@ Because `desc.json` only contains the newest batch, slower OpenClaw polling inte
 Run the current test suite with:
 
 ```bash
-python3 -m unittest discover -s tests -v
+uv run python -m unittest discover -s tests -v
 ```
 
 If you want the full dev toolchain from `pyproject.toml`:

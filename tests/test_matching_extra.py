@@ -77,30 +77,22 @@ class AnnualizeSalaryToGbpTestCase(unittest.TestCase):
 
 class ExtractSalaryRangeGbpTestCase(unittest.TestCase):
     def test_gbp_range(self) -> None:
-        result = matching.extract_salary_range_gbp("£40,000 - £60,000 per year")
-        self.assertIsNotNone(result)
-        assert result is not None
+        result = self._assert_salary_range("£40,000 - £60,000 per year")
         r = cast(dict[str, Any], result)
         self.assertEqual(r["currency"], "gbp")
         self.assertGreaterEqual(cast(float, r["min_gbp"]), 40000)
         self.assertLessEqual(cast(float, r["max_gbp"]), 60000)
 
     def test_gbp_with_k_suffix(self) -> None:
-        result = matching.extract_salary_range_gbp("£40k - £60k")
-        self.assertIsNotNone(result)
-        assert result is not None
+        result = self._assert_salary_range("£40k - £60k")
         self.assertGreaterEqual(cast(float, result["min_gbp"]), 40000)
 
     def test_usd_range(self) -> None:
-        result = matching.extract_salary_range_gbp("$80,000 - $100,000")
-        self.assertIsNotNone(result)
-        assert result is not None
+        result = self._assert_salary_range("$80,000 - $100,000")
         self.assertEqual(result["currency"], "usd")
 
     def test_single_salary(self) -> None:
-        result = matching.extract_salary_range_gbp("Salary: £55,000")
-        self.assertIsNotNone(result)
-        assert result is not None
+        result = self._assert_salary_range("Salary: £55,000")
         self.assertEqual(result["min_gbp"], result["max_gbp"])
 
     def test_no_salary_returns_none(self) -> None:
@@ -115,10 +107,14 @@ class ExtractSalaryRangeGbpTestCase(unittest.TestCase):
         self.assertIsNotNone(result)
 
     def test_hourly_rate(self) -> None:
-        result = matching.extract_salary_range_gbp("£25 per hour")
+        result = self._assert_salary_range("£25 per hour")
+        self.assertEqual(result["cadence"], "hour")
+
+    def _assert_salary_range(self, salary_text: str):
+        result = matching.extract_salary_range_gbp(salary_text)
         self.assertIsNotNone(result)
         assert result is not None
-        self.assertEqual(result["cadence"], "hour")
+        return result
 
 
 class FormatSalaryInfoForReasonTestCase(unittest.TestCase):
@@ -338,6 +334,29 @@ class QueuePendingAlertsTestCase(unittest.TestCase):
         queued = matching.queue_pending_alerts(alert_state, [existing])
         self.assertEqual(queued, 0)
 
+    def test_queues_alert_without_reasons(self) -> None:
+        alert_state: AlertState = {
+            "pending_alerts": [],
+            "alerted_links": [],
+            "last_run_utc": "",
+            "last_delivery_utc": "",
+            "last_delivery_error": "",
+        }
+        matches = [
+            {
+                "link": "https://example.com/source",
+                "title": "Source Failure: Reed",
+                "time": "2026-04-09T13:43:59Z",
+                "score": 100,
+                "source": "System Monitor",
+            }
+        ]
+        queued = matching.queue_pending_alerts(alert_state, matches)
+        pending_alerts = cast(list[dict[str, object]], alert_state["pending_alerts"])
+
+        self.assertEqual(queued, 1)
+        self.assertEqual(pending_alerts[0]["reasons"], [])
+
 
 class DeliverPendingAlertsTestCase(unittest.TestCase):
     def test_returns_zero_when_no_pending(self) -> None:
@@ -556,33 +575,30 @@ class NormalizeApplicationRecordTestCase(unittest.TestCase):
         self.assertIsNone(matching.normalize_application_record({}))
 
     def test_handles_non_list_fingerprints(self) -> None:
-        payload = {
-            "title": "IT Support Engineer",
-            "link": "https://example.com/jobs/1",
-            "fingerprints": "single-fingerprint",
-        }
-        result = matching.normalize_application_record(payload)
-        self.assertIsNotNone(result)
+        result = self._assert_normalized_non_list_field(
+            "fingerprints",
+            "IT Support Engineer",
+            "https://example.com/jobs/1",
+            "single-fingerprint",
+        )
         assert result is not None
         self.assertIn("single-fingerprint", cast(list[str], result["fingerprints"]))
 
     def test_handles_non_list_links(self) -> None:
-        payload = {
-            "title": "IT Support Engineer",
-            "link": "https://example.com/jobs/1",
-            "links": "https://example.com/jobs/1",
-        }
-        result = matching.normalize_application_record(payload)
-        self.assertIsNotNone(result)
+        self._assert_normalized_non_list_field(
+            "links",
+            "IT Support Engineer",
+            "https://example.com/jobs/1",
+            "https://example.com/jobs/1",
+        )
 
     def test_handles_non_list_sources(self) -> None:
-        payload = {
-            "title": "IT Support Engineer",
-            "link": "https://example.com/jobs/1",
-            "sources": "board_name",
-        }
-        result = matching.normalize_application_record(payload)
-        self.assertIsNotNone(result)
+        self._assert_normalized_non_list_field(
+            "sources",
+            "IT Support Engineer",
+            "https://example.com/jobs/1",
+            "board_name",
+        )
 
     def test_extracts_company_from_title(self) -> None:
         payload = {
@@ -608,75 +624,56 @@ class NormalizeApplicationRecordTestCase(unittest.TestCase):
         self.assertTrue(result["application_ready"])
 
     def test_handles_non_list_reasons(self) -> None:
-        payload = {
-            "title": "IT Support",
-            "link": "https://example.com/1",
-            "reasons": "single reason",
-        }
-        result = matching.normalize_application_record(payload)
-        self.assertIsNotNone(result)
+        self._assert_normalized_non_list_field("reasons", "IT Support", "https://example.com/1", "single reason")
 
     def test_handles_non_list_fit_notes(self) -> None:
-        payload = {
-            "title": "IT Support",
-            "link": "https://example.com/1",
-            "why_this_fits": "Good overlap",
-        }
-        result = matching.normalize_application_record(payload)
-        self.assertIsNotNone(result)
+        self._assert_normalized_non_list_field("why_this_fits", "IT Support", "https://example.com/1", "Good overlap")
 
     def test_handles_non_list_resume_bullets(self) -> None:
-        payload = {
-            "title": "IT Support",
-            "link": "https://example.com/1",
-            "resume_bullet_suggestions": "Managed AD accounts",
-        }
+        self._assert_normalized_non_list_field(
+            "resume_bullet_suggestions",
+            "IT Support",
+            "https://example.com/1",
+            "Managed AD accounts",
+        )
+
+    def _assert_normalized_non_list_field(
+        self,
+        field_name: str,
+        title: str,
+        link: str,
+        field_value: str,
+    ) -> dict[str, object]:
+        payload = {"title": title, "link": link, field_name: field_value}
         result = matching.normalize_application_record(payload)
         self.assertIsNotNone(result)
+        assert result is not None
+        return cast(dict[str, object], result)
 
 
 class SyncApplicationOutcomesTestCase(unittest.TestCase):
     def test_sets_applied_at_utc_for_applied_status(self) -> None:
-        state = fresh_applications_state()
-        state["applications"] = [
-            {
-                "title": "Role",
-                "link": "https://example.com/1",
-                "status": "applied",
-                "last_seen_utc": "2026-04-01T10:00:00Z",
-            }
-        ]
-        matching.sync_application_outcomes(state, "2026-04-04T10:00:00Z")
-        app = state["applications"][0]
-        self.assertTrue(app.get("applied_at_utc"))
+        self._assert_status_timestamp_set("applied", "applied_at_utc")
 
     def test_sets_interviewed_at_utc_for_interview_status(self) -> None:
-        state = fresh_applications_state()
-        state["applications"] = [
-            {
-                "title": "Role",
-                "link": "https://example.com/1",
-                "status": "interview",
-                "last_seen_utc": "2026-04-01T10:00:00Z",
-            }
-        ]
-        matching.sync_application_outcomes(state, "2026-04-04T10:00:00Z")
-        app = state["applications"][0]
-        self.assertTrue(app.get("interviewed_at_utc"))
+        self._assert_status_timestamp_set("interview", "interviewed_at_utc")
 
     def test_sets_rejected_at_utc_for_rejected_status(self) -> None:
+        self._assert_status_timestamp_set("rejected", "rejected_at_utc")
+
+    def _assert_status_timestamp_set(self, status: str, timestamp_key: str) -> None:
         state = fresh_applications_state()
         state["applications"] = [
             {
                 "title": "Role",
                 "link": "https://example.com/1",
-                "status": "rejected",
+                "status": status,
                 "last_seen_utc": "2026-04-01T10:00:00Z",
             }
         ]
         matching.sync_application_outcomes(state, "2026-04-04T10:00:00Z")
         app = state["applications"][0]
-        self.assertTrue(app.get("rejected_at_utc"))
+        self.assertTrue(app.get(timestamp_key))
 
 
 class TelegramPayloadValueTestCase(unittest.TestCase):

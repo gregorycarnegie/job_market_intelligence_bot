@@ -25,13 +25,13 @@ Edit `resume.json` with your own skills, target roles, and location preferences 
 Quick full-suite run:
 
 ```bash
-python3 -m unittest discover -s tests -v
+uv run python -m unittest discover -s tests -v
 ```
 
 CI-equivalent coverage run:
 
 ```bash
-uv run pytest --cov=jobbot tests/ --cov-fail-under=85 --cov-report=term-missing
+uv run --extra dev pytest --cov=jobbot tests/ --cov-fail-under=85 --cov-report=term-missing
 ```
 
 The GitHub Actions workflow currently enforces a minimum of **85% coverage**.

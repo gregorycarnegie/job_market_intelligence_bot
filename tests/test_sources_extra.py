@@ -1,10 +1,28 @@
 import tempfile
 import unittest
+from email.message import Message
 from pathlib import Path
 from typing import cast
+from unittest import mock
+from urllib.error import HTTPError
 from xml.etree import ElementTree
 
 from jobbot import sources
+
+
+class UrlopenWithRetryTestCase(unittest.TestCase):
+    def test_retry_log_includes_backoff_seconds(self) -> None:
+        error = HTTPError("https://example.com", 500, "Internal Server Error", Message(), None)
+
+        with (
+            mock.patch.object(sources, "urlopen", side_effect=error),
+            mock.patch.object(sources.time, "sleep"),
+            self.assertLogs("jobbot.sources", level="WARNING") as logs,
+        ):
+            with self.assertRaises(HTTPError):
+                sources._urlopen_with_retry(sources.Request("https://example.com"), timeout=1)
+
+        self.assertIn("retrying in 1s", logs.output[0])
 
 
 class FormatJsonldAddressTestCase(unittest.TestCase):

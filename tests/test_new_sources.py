@@ -102,9 +102,7 @@ class AdzunaSourceTestCase(unittest.TestCase):
 
         def fake_fetch(url):
             calls.append(url)
-            if len(calls) == 1:
-                return {"results": full_page}
-            return {"results": []}
+            return {"results": full_page} if len(calls) == 1 else {"results": []}
 
         with mock.patch.dict(os.environ, {"ADZUNA_APP_ID": "id", "ADZUNA_APP_KEY": "key"}):
             with mock.patch.object(sources, "fetch_json", side_effect=fake_fetch):
@@ -437,9 +435,7 @@ class ArbeitnowSourceTestCase(unittest.TestCase):
 
         def fake_fetch(url):
             calls.append(url)
-            if len(calls) == 1:
-                return {"data": [self._one_job()]}
-            return {"data": []}
+            return {"data": [self._one_job()]} if len(calls) == 1 else {"data": []}
 
         with mock.patch.object(sources, "fetch_json", side_effect=fake_fetch):
             items = src.fetch()
