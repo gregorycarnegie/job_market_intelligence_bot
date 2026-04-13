@@ -271,7 +271,7 @@ def main() -> int:
                     ):
                         continue
 
-                    eval = cast(
+                    eval_dict = cast(
                         dict[str, Any],
                         score_job(
                             item,
@@ -285,13 +285,13 @@ def main() -> int:
                     )
                     storage.append_reviewed_fingerprints(STATE_DB_FILE, fingerprints, MAX_REVIEWED_FINGERPRINTS)
                     reviewed_count += 1
-                    if not eval["qualified"]:
-                        candidate = cast(dict[str, object] | None, eval.get("candidate"))
-                        if candidate and cast(int, eval["score"]) >= max(0, MIN_MATCH_SCORE - BORDERLINE_MATCH_MARGIN):
+                    if not eval_dict["qualified"]:
+                        candidate = cast(dict[str, object] | None, eval_dict.get("candidate"))
+                        if candidate and cast(int, eval_dict["score"]) >= max(0, MIN_MATCH_SCORE - BORDERLINE_MATCH_MARGIN):
                             borderline_details.append(candidate)
                         continue
 
-                    match = cast(dict[str, Any], eval["match"])
+                    match = cast(dict[str, Any], eval_dict["match"])
                     new_rows.append(
                         {
                             "time": match["time"],

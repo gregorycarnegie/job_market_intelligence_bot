@@ -1271,7 +1271,7 @@ def load_seen_jobs_state(_seen_jobs_state_file: str) -> SeenJobsState:
     Load the seen jobs tracker state, enforcing size limits on reviewed fingerprints.
 
     Args:
-        seen_jobs_state_file: Unused in DB mode.
+        _seen_jobs_state_file: Unused in DB mode.
 
     Returns:
         State dictionary.
